@@ -63,7 +63,7 @@ from tool_schemas import REACT_TOOL_SCHEMAS, TERMINAL_TOOL_NAME, build_dispatch
 # a full turn is now typically draft -> verify -> maybe repair -> maybe
 # compare -> deliver, so fewer steps are needed. A tighter ceiling both caps
 # worst-case spend and forces the model to converge instead of dithering.
-MAX_STEPS = int(os.environ.get("REACT_MAX_STEPS", "16"))
+MAX_STEPS = int(os.environ.get("REACT_MAX_STEPS", "18"))
 SESSION_BUDGET_USD_CAP = float(os.environ.get("SESSION_BUDGET_USD_CAP", "0.50"))
 
 
@@ -78,15 +78,19 @@ def _call_with_tools(messages: list[dict]) -> tuple[object, float]:
     return response.choices[0].message, cost
 
 
-def _available_courses_text(track: Track, passed: list[str]) -> str:
+def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: list[int] | None = None) -> str:
     """The courses the student can ACTUALLY take next semester: offered then,
     prerequisites already satisfied, and not already passed. The model was
     otherwise handed the whole catalog (including locked/future courses) and
     had to infer eligibility itself - and got it wrong, padding credits with
-    filler when it couldn't tell what was really takeable. Handing it this
-    shortlist directly is the difference between a real 18-credit plan and a
-    stack of one-point sport courses."""
+    filler when it couldn't tell what was really takeable.
+
+    Courses whose EVERY section hits one of the student's excluded days get
+    an explicit DAY-BLOCKED tag: the model must not pick them (a delivered
+    plan is clash-free), but it uses them for the 'freeing Monday would
+    unlock X and Y' disclosure the advisor methodology requires."""
     passed_set = set(passed)
+    excluded = list(excluded_weekdays or [])
     rows = []
     for num, c in sorted(track.courses.items()):
         if num in passed_set or not c.get("offered_next_semester"):
@@ -99,7 +103,13 @@ def _available_courses_text(track: Track, passed: list[str]) -> str:
         exams = c["exams"].get("moed_a", [])
         exam = f"exam {exams[0]['date']}" if exams else "no exam"
         tag = "MANDATORY" if num in track.mandatory_course_numbers else "elective"
-        rows.append(f"{num} — {c['name']} ({c['points']} pts, {load}{sat}, {exam}, {tag})")
+        day_note = ""
+        if excluded and c.get("schedule"):
+            best = tools.pick_section(c, excluded)
+            hit_days = sorted({s["weekday"] for s in best if s.get("weekday") in excluded})
+            if hit_days:
+                day_note = f" [DAY-BLOCKED: only meets on excluded day(s) {hit_days} - do NOT include; cite in the relax-note]"
+        rows.append(f"{num} — {c['name']} ({c['points']} pts, {load}{sat}, {exam}, {tag}){day_note}")
     if not rows:
         return "(none - every remaining course is either not offered next semester or has unmet prerequisites)"
     return "\n".join(rows)
@@ -224,7 +234,15 @@ react to the credit total.
 avoid: look at the exam date printed for each candidate course and \
 actively avoid putting two exams within a few days of each other - don't \
 wait for verify_plan to catch this after the fact, route around it while \
-choosing.
+choosing. Before delivering, run exam_study_planner on your candidate: it \
+shows the REAL study days between every exam including moed B (which \
+verify_plan does not enforce), and even names the single swap that most \
+relieves the worst crunch. A plan where the student has 0-1 days to study \
+between exams is a bad plan even if it technically verifies.
+3b. The weekly schedule must be livable: run weekly_schedule_analyzer on \
+your candidate before delivering - overlapping class times are a hard \
+defect (verify_plan flags irreducible ones), and a week crammed into \
+back-to-back marathon days is worth fixing when an alternative exists.
 4. Unless the student's constraints say override_minimums: true, include \
 at least {tools.DEFAULT_MIN_MANDATORY_COURSES} mandatory courses if that \
 many remain. Target {tools.DEFAULT_MIN_CREDITS} credit points total - a \
@@ -256,10 +274,6 @@ Student's passed courses: {state["passed_courses"]}
 Student's failed/outstanding required courses: {state["failed_courses"]}
 Student's constraints: {json.dumps(state["constraints"], ensure_ascii=False)}
 
-Full course catalog (number - name (points, difficulty, exam date, \
-mandatory/elective status)):
-{_catalog_with_meta_text(track.otjid)}
-
 Diagnostics already computed for you (you do NOT need to fetch these):
 
 Progress vs. a typical student at this point in the track:
@@ -272,10 +286,11 @@ Prerequisite-graph analysis of the student's failed/outstanding courses \
 (what each blocks, gateway scores):
 {json.dumps(prereq, ensure_ascii=False)}
 
-COURSES THE STUDENT CAN ACTUALLY TAKE NEXT SEMESTER (offered then, \
-prerequisites already met, not yet passed) - build the plan from THIS \
-shortlist; anything not here is either locked or not offered, so don't \
-include it:
+THE COURSE MENU - the ONLY courses the student can take next semester \
+(offered then, prerequisites already met, not yet passed). Every course \
+number in your plan MUST come from this list - there is no other valid \
+source; a number not listed here is locked, not offered, or already done, \
+and will be rejected:
 {available_text}
 
 Build a real, substantive semester from that shortlist. Reach the credit \
@@ -285,6 +300,29 @@ ONE sport/PE course in a plan; if you still can't reach the target after \
 using the real courses available, that's a genuine finding to report \
 honestly, not something to paper over with filler.
 
+BUILD THE PLAN THE WAY THE ADVISOR DOES, in this exact order:
+Step 1 - the mandatory skeleton: place this semester's required courses \
+and retakes that fit the student's constraints. These are the anchors.
+Step 2 - substitution, when a required course cannot fit (day-blocked or \
+exam clash): replace it like-for-like with the nearest-topic elective \
+from the same degree category, OR pull a NEXT-semester mandatory course \
+forward if its prerequisites are already met - keep real degree progress, \
+never pad with filler.
+Step 3 - fill the remaining credits with well-liked electives that fit \
+the week and the exam calendar.
+
+DELIVERY STANDARD - the advisor's bar for what may reach the student:
+- A delivered plan carries AT MOST 2 open issues, and only ones the \
+student's own constraints truly force. "Lazy" issues are NEVER acceptable \
+- low credits, too few mandatory courses, exam clashes, class-time \
+overlaps, or including a DAY-BLOCKED course - all of those are fixable by \
+substitution, so fix them before delivering.
+- Never include a course tagged DAY-BLOCKED in the shortlist. Deliver \
+clash-free, and in your explanation name what relaxing ONE specific day \
+would unlock (e.g. "freeing Monday would add X and Y and reach 18 \
+credits") using the DAY-BLOCKED tags - the student decides, with the \
+whole picture, whether their day off is worth it.
+
 Your job is the judgment, not the bookkeeping: using the diagnostics above, \
 draft a candidate course list, then use your tools to check and refine it. \
 Available tools - fetch_exam_dates and summarize_cheesefork (to inspect \
@@ -292,12 +330,13 @@ candidates), simulate_future_impact (planning-horizon check), \
 roadmap_to_graduation (project the remaining semesters assuming your \
 candidate completes - use it to justify choices by what they unlock), \
 risk_report (stress-test your final candidate: fragile courses, exam \
-crunches, stacked heavy courses - call it once before delivering), \
-verify_plan (the critic - ALWAYS call this on your candidate before \
-delivering), compare_plans (to weigh two real alternatives), \
-check_invariants, search_courses (to resolve a course name). You have at \
-most {MAX_STEPS} tool calls this turn - budget them; never call the same \
-tool with the same arguments twice.
+crunches, stacked heavy courses), exam_study_planner (the exam period as a \
+study plan, moed A + B), weekly_schedule_analyzer (what the week actually \
+looks like: overlaps, days on campus, free days), verify_plan (the critic \
+- ALWAYS call this on your candidate before delivering), compare_plans \
+(to weigh two real alternatives), check_invariants, search_courses (to \
+resolve a course name). You have at most {MAX_STEPS} tool calls this turn \
+- budget them; never call the same tool with the same arguments twice.
 
 You MUST end the turn by calling deliver_plan exactly once - never respond \
 with plain text instead. deliver_plan's course_numbers MUST be exactly the \
@@ -464,7 +503,7 @@ def run_agent_turn_v2(
     tool_log.append({"name": "fetch_catalog", "args": {"preinjected": True}, "result": catalog})
     tool_log.append({"name": "query_prereq_graph", "args": {"preinjected": True}, "result": prereq})
 
-    available_text = _available_courses_text(track, passed)
+    available_text = _available_courses_text(track, passed, excluded_weekdays)
 
     # Courses the student EXPLICITLY asked to remove/replace this turn -
     # extraction resolves the names to numbers; Python enforces the removal
@@ -548,7 +587,7 @@ def run_agent_turn_v2(
     persistent_issue_pushed = False
     sport_padding_pushed = False
     removal_pushed = False
-    issues_pushed = False
+    issues_pushed = 0
     stopped_reason = "step_limit_exhausted"
     final_course_numbers: list[str] = []
     final_explanation = ""
@@ -714,13 +753,17 @@ def run_agent_turn_v2(
                     # deterministic account of the corrected list's real
                     # issues is trustworthy - same principle as the old
                     # pipeline never trusting stale reasoning.
-                    final_explanation = (
-                        "The plan you were about to see needed a correction: "
+                    correction = (
+                        "Note - a correction was applied before delivery: "
                         + "; ".join(violations)
-                        + f". After fixing that, it now has {verify_result['total_credits']} credits "
-                        + ("and verifies cleanly." if verify_result["pass"] else "but still has open issues: "
+                        + f". The corrected plan has {verify_result['total_credits']} credits"
+                        + ("." if verify_result["pass"] else ", with these still open: "
                            + "; ".join(i["reason"] for i in verify_result["issues"]) + ".")
                     )
+                    # Keep the model's own reasoning (it may carry the
+                    # relax-note and per-course rationale) - prepend the
+                    # deterministic correction instead of erasing it.
+                    final_explanation = (final_explanation + " " + correction).strip()
                 # The delivered plan counts toward best-tracking too, so the
                 # empty-plan fallback below can reach for it if needed.
                 if candidate and _plan_score(verify_result, candidate, previous_plan) > _plan_score(
@@ -789,36 +832,43 @@ def run_agent_turn_v2(
                     )
                     continue
 
-                # Fixable-issues pushback (first turns): the happy-path test
-                # delivered a failing 21-credit plan with prereq-blocked
-                # courses and clashing exams while NO guard fired - the
-                # issue-carryover guard below only covers revisions. On a
-                # first turn with a completely unconstrained student, a
-                # failing verify is almost always fixable - send the model
-                # back ONCE with the concrete issues before accepting.
+                # Issue-budget guard (the advisor's delivery standard): a
+                # plan may reach the student with AT MOST 2 open issues,
+                # and NONE of them "lazy" (credits, mandatory count, exam
+                # clashes, overlaps - all fixable by substitution). Only
+                # genuinely forced issues (a day conflict the student's own
+                # constraints create) may remain. Fires up to twice, on any
+                # turn - a 5-issue delivery was observed live and is
+                # exactly what this exists to prevent.
+                issues_list = verify_result.get("issues", [])
+                lazy_issues = [
+                    i["reason"] for i in issues_list if "excluded weekday" not in i["reason"]
+                ]
                 if (
-                    verify_result.get("issues")
-                    and not previous_plan
-                    and not issues_pushed
+                    (lazy_issues or len(issues_list) > 2)
+                    and issues_pushed < 2
                     and step < MAX_STEPS - 1
                 ):
-                    issues_pushed = True
+                    issues_pushed += 1
                     tool_log.append(
-                        {"name": "fixable_issues_pushback", "args": {},
-                         "result": {"issues": [i["reason"] for i in verify_result["issues"]]}}
+                        {"name": "issue_budget_pushback", "args": {"attempt": issues_pushed},
+                         "result": {"issues": [i["reason"] for i in issues_list]}}
                     )
                     react_messages.append(
                         {
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "content": (
-                                "Not delivered: this plan has fixable issues: "
-                                + "; ".join(i["reason"] for i in verify_result["issues"])
-                                + ". Swap or drop the specific courses involved (use the "
-                                "available-courses shortlist - it only contains courses whose "
-                                "prerequisites are already met), verify the corrected list, and "
-                                "deliver that. Only re-deliver with an issue intact if it is "
-                                "genuinely unavoidable - then say so explicitly."
+                                "Not delivered: this plan has "
+                                + str(len(issues_list))
+                                + " open issue(s), including fixable ones: "
+                                + "; ".join(lazy_issues or [i["reason"] for i in issues_list])
+                                + ". The delivery standard is AT MOST 2 issues, none of them "
+                                "fixable-by-substitution. Follow the build order: keep the "
+                                "mandatory skeleton, substitute like-for-like from the same "
+                                "category or pull a next-semester mandatory forward, fill with "
+                                "well-liked electives that fit. Verify the corrected list and "
+                                "deliver that."
                             ),
                         }
                     )
@@ -989,6 +1039,59 @@ def run_agent_turn_v2(
             "before a semester plan can be built."
         )
 
+    # HARD locked-course backstop: a course whose prerequisites aren't met
+    # cannot be registered for, period - strip it on any delivery path.
+    # (Retakes are exempt: their prereqs were met the first time around.)
+    if final_course_numbers:
+        locked = tools.prereq_unmet_in(track, final_course_numbers, passed, failed)
+        if locked:
+            final_course_numbers = [c for c in final_course_numbers if c not in locked]
+            last_verify_result = tools.verify_plan(
+                track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+            )
+            names = ", ".join(track.courses[c]["name"] for c in locked if c in track.courses)
+            final_explanation += (
+                f" Note: {names} was removed - its prerequisites aren't met yet, so it can't be "
+                "registered for this semester; it stays on the roadmap for when it unlocks."
+            )
+            tool_log.append({"name": "locked_enforced", "args": {}, "result": {"dropped": locked}})
+
+    # HARD collision backstop: a delivered week must NEVER contain a real
+    # class-time collision, on any path (model delivery, forced wrap-up,
+    # empty-plan fallback). If the coordinated section assignment still has
+    # irreducible overlaps, deterministically drop the least valuable
+    # course of each colliding pair (keep retakes, then mandatory, then
+    # higher credits) until the week is clean - same philosophy as removal
+    # enforcement: judgment belongs to the model, but this is correctness.
+    if final_course_numbers:
+        dropped_for_overlap: list[str] = []
+        while True:
+            section_check = tools.choose_sections(track, final_course_numbers, excluded_weekdays)
+            if not section_check["overlaps"]:
+                break
+            pair = section_check["overlaps"][0]
+            a, b = pair["course_a"], pair["course_b"]
+
+            def keep_value(c):
+                course = track.courses.get(c, {})
+                return (c in failed, c in track.mandatory_course_numbers, float(course.get("points") or 0))
+
+            drop = a if keep_value(a) <= keep_value(b) else b
+            final_course_numbers = [c for c in final_course_numbers if c != drop]
+            dropped_for_overlap.append(drop)
+        if dropped_for_overlap:
+            last_verify_result = tools.verify_plan(
+                track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+            )
+            names = ", ".join(track.courses[c]["name"] for c in dropped_for_overlap if c in track.courses)
+            final_explanation += (
+                f" Note: {names} was removed from the plan because its class times collide with another "
+                "course in every available section combination - a clashing week is never delivered."
+            )
+            tool_log.append(
+                {"name": "overlap_enforced", "args": {}, "result": {"dropped": dropped_for_overlap}}
+            )
+
     verify_result = last_verify_result or {"pass": False, "total_credits": 0, "workload_score": 0, "issues": []}
     exam_dates = tools.fetch_exam_dates(track, final_course_numbers) if final_course_numbers else {}
     cheesefork = tools.summarize_cheesefork(track, final_course_numbers) if final_course_numbers else {}
@@ -997,6 +1100,15 @@ def run_agent_turn_v2(
     # chose to consult these tools itself mid-loop.
     roadmap = tools.roadmap_to_graduation(track, passed, failed, plan_course_numbers=final_course_numbers)
     risks = tools.risk_report(track, final_course_numbers, passed, failed) if final_course_numbers else {"risks": [], "top_risk": None}
+    # ONE coordinated section assignment for the whole plan - sections are
+    # chosen to avoid excluded days AND each other, and the timetable the
+    # student sees is exactly this assignment (per-course independent picks
+    # previously produced overlapping blocks on the weekly grid).
+    section_assignments = (
+        tools.choose_sections(track, final_course_numbers, excluded_weekdays)["assignments"]
+        if final_course_numbers
+        else {}
+    )
 
     messages = messages + [{"role": "assistant", "content": final_explanation}]
 
@@ -1018,9 +1130,9 @@ def run_agent_turn_v2(
                 "is_retake": c in failed,
                 "is_mandatory": c in track.mandatory_course_numbers,
                 "schedule": track.courses[c]["schedule"],
-                # One coherent registration group for the weekly timetable
-                # view, honoring the student's excluded days.
-                "timetable_slots": tools.pick_section(track.courses[c], excluded_weekdays),
+                # The coordinated section assignment - one coherent group
+                # per course, chosen to avoid excluded days and each other.
+                "timetable_slots": section_assignments.get(c, []),
                 "why": course_reasons.get(c, ""),
                 "exams": exam_dates.get(c, {}),
                 "cheesefork": cheesefork.get(c, {}),

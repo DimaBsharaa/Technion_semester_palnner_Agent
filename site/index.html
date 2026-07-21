@@ -1195,6 +1195,27 @@ function buildWeeklyTimetable(courses) {
       .filter(x => x.slot.weekday === day)
       .sort((a, b) => toMinutes(a.slot.start) - toMinutes(b.slot.start));
 
+    // Proper lane layout (interval partitioning): overlapping blocks share
+    // the column side-by-side; adjacent blocks (one ends when the next
+    // starts) keep full width. The old "shrink only the second block"
+    // hack left blocks smeared over each other.
+    const lanes = [];        // laneEnd[i] = end minute of last block in lane i
+    daySlots.forEach((x) => {
+      const s = toMinutes(x.slot.start);
+      let lane = lanes.findIndex(end => end <= s);
+      if (lane === -1) { lane = lanes.length; lanes.push(0); }
+      lanes[lane] = toMinutes(x.slot.end);
+      x._lane = lane;
+    });
+    // Cluster-aware lane counts: a block's width divisor is the max
+    // concurrency within its own overlap cluster, not the whole day.
+    daySlots.forEach((x) => {
+      const s = toMinutes(x.slot.start), e = toMinutes(x.slot.end);
+      const concurrent = daySlots.filter(o =>
+        toMinutes(o.slot.start) < e && s < toMinutes(o.slot.end));
+      x._laneCount = Math.max(...concurrent.map(o => o._lane + 1), x._lane + 1);
+    });
+
     daySlots.forEach((x, i) => {
       const top = ((toMinutes(x.slot.start) - startHour * 60) / 60) * PX_PER_HOUR;
       const blockHeight = Math.max(((toMinutes(x.slot.end) - toMinutes(x.slot.start)) / 60) * PX_PER_HOUR - 2, 20);
@@ -1204,11 +1225,10 @@ function buildWeeklyTimetable(courses) {
       block.style.height = blockHeight + 'px';
       block.style.background = TT_COLORS[x.idx % TT_COLORS.length];
       block.style.setProperty('--td', (0.3 + i * 0.08 + day * 0.05).toFixed(2) + 's');
-      // Overlap: if the previous block in this day overlaps, split widths.
-      const prev = daySlots[i - 1];
-      if (prev && toMinutes(prev.slot.end) > toMinutes(x.slot.start)) {
-        block.style.left = '50%';
-      }
+      const widthPct = 100 / x._laneCount;
+      block.style.left = `calc(${(x._lane * widthPct).toFixed(2)}% + 3px)`;
+      block.style.right = 'auto';
+      block.style.width = `calc(${widthPct.toFixed(2)}% - 6px)`;
       block.draggable = true;
       block.title = `${x.course.name} — drag off the grid (or double-click) to swap`;
       const nameEl = document.createElement('div');
@@ -1475,6 +1495,10 @@ const STEP_LABELS = {
   simulate_future_impact: 'Projecting future semesters…',
   roadmap_to_graduation: 'Charting your road to graduation…',
   risk_report: 'Stress-testing the plan…',
+  weekly_schedule_analyzer: 'Laying out your week…',
+  exam_study_planner: 'Checking study days between exams…',
+  overlap_enforced: 'Resolving a class-time collision…',
+  locked_enforced: 'Removing a locked course…',
   verify_plan: 'Verifying against every constraint…',
   compare_plans: 'Comparing alternatives…',
   check_invariants: 'Running safety checks…',

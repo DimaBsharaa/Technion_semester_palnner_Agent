@@ -55,7 +55,7 @@ from data_bundle import get_track, list_tracks
 # Bump this string on every architecturally-significant change, so a stale
 # running process is immediately obvious from GET /health instead of being
 # diagnosed after the fact from file timestamps.
-AGENT_VERSION = "creative-upgrades-v1-2026-07-21"
+AGENT_VERSION = "schedule-intelligence-v1-2026-07-21"
 
 # "pipeline" = agent_loop.run_agent_turn (hardcoded draft/verify/repair/
 # compare/explain stages) - kept available as a fallback, not removed.

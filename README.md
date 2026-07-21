@@ -37,7 +37,7 @@ Requirements: Python 3.11+, `pip install fastapi uvicorn openai`.
 ## Tests
 
 ```bash
-bash agent/tests/run_mocked.sh          # 57 checks, no API cost - run before any demo
+bash agent/tests/run_mocked.sh          # 54 checks, no API cost - run before any demo
 python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after model/prompt changes
 ```
 
@@ -46,7 +46,7 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
 | Path | What it is |
 |---|---|
 | `agent/agent_react_loop.py` | **The agent** — the bounded tool-choosing loop and its guards |
-| `agent/tools.py` | All 13 tools (pure Python, no AI inside) |
+| `agent/tools.py` | All 15 tools (pure Python, no AI inside) - incl. the weekly-schedule and exam-study analyzers |
 | `agent/agent_loop.py` | Understanding/extraction + shared helpers + legacy pipeline (fallback) |
 | `agent/main.py` | Web server: `/chat`, `/chat/stream` (live steps), `/tracks`, `/health` |
 | `agent/tests/` | Automated checks + live scenario suite |

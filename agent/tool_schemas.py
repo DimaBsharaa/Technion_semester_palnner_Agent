@@ -183,6 +183,34 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "weekly_schedule_analyzer",
+            "description": "What the candidate plan's week ACTUALLY looks like: coordinates one section per course (avoiding excluded days and each other), then reports unavoidable time overlaps, days on campus, free days, and the busiest day. Call this on your candidate before delivering - overlapping lectures are a hard defect.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_course_numbers": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["plan_course_numbers"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "exam_study_planner",
+            "description": "The exam period as a study plan: chronological timeline of moed A AND moed B exams with study-days before each, crunch flags (under 3 days), and which single course swap most relieves the worst crunch. Call this on your candidate before delivering.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_course_numbers": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["plan_course_numbers"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "deliver_plan",
             "description": "Terminal action - ends the turn and delivers the final plan to the student. Call this exactly once, when you're done (either the plan verified, or you've concluded this is the best achievable option and further attempts won't help).",
             "parameters": {
@@ -279,6 +307,12 @@ def build_dispatch(
     def _risk_report(args):
         return tools.risk_report(track, args["plan_course_numbers"], passed, failed)
 
+    def _weekly_schedule_analyzer(args):
+        return tools.weekly_schedule_analyzer(track, args["plan_course_numbers"], excluded_weekdays)
+
+    def _exam_study_planner(args):
+        return tools.exam_study_planner(track, args["plan_course_numbers"])
+
     return {
         "search_courses": _search_courses,
         "assess_progress": _assess_progress,
@@ -292,6 +326,8 @@ def build_dispatch(
         "check_invariants": _check_invariants,
         "roadmap_to_graduation": _roadmap_to_graduation,
         "risk_report": _risk_report,
+        "weekly_schedule_analyzer": _weekly_schedule_analyzer,
+        "exam_study_planner": _exam_study_planner,
     }
 
 

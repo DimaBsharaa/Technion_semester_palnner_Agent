@@ -476,6 +476,29 @@ def risk_report(
                 }
             )
 
+    # Moed B crunches (advisory): moed B dates are fixed by the Technion,
+    # so tight gaps are often unavoidable - but a student who lands in two
+    # moed B exams a day apart deserves to know before it happens.
+    b_dates = []
+    for c in plan_course_numbers:
+        if c not in track.courses:
+            continue
+        for exam in track.courses[c]["exams"].get("moed_b", []):
+            b_dates.append((exam["date"], c))
+    b_dates.sort()
+    for (d1, c1), (d2, c2) in zip(b_dates, b_dates[1:]):
+        gap = (date.fromisoformat(d2) - date.fromisoformat(d1)).days
+        if gap <= 1:
+            risks.append(
+                {
+                    "type": "moed_b_crunch",
+                    "course_number": c2,
+                    "name": track.courses[c2]["name"],
+                    "detail": f"moed B exam only {gap} day(s) after {track.courses[c1]['name']}'s moed B",
+                    "severity": 3 - gap,
+                }
+            )
+
     # Workload spike: multiple heavy courses stacked together.
     heavy = [
         c for c in plan_course_numbers
@@ -530,6 +553,225 @@ def pick_section(course: dict, excluded_weekdays: list[int] | None = None) -> li
         if best_conflicts is None or conflicts < best_conflicts:
             best, best_conflicts = slots, conflicts
     return best or []
+
+
+def _to_minutes(hhmm: str) -> int:
+    parts = str(hhmm or "0:0").split(":")
+    try:
+        return int(parts[0]) * 60 + int(parts[1] if len(parts) > 1 else 0)
+    except ValueError:
+        return 0
+
+
+def _slots_overlap(a: dict, b: dict) -> bool:
+    if a.get("weekday") != b.get("weekday"):
+        return False
+    return _to_minutes(a.get("start")) < _to_minutes(b.get("end")) and _to_minutes(b.get("start")) < _to_minutes(a.get("end"))
+
+
+def choose_sections(
+    track: Track, course_numbers: list[str], excluded_weekdays: list[int] | None = None
+) -> dict:
+    """Coordinated section assignment for a WHOLE plan: picks one
+    registration group per course so that, as far as the data allows, no
+    two courses collide in time and no slot lands on an excluded day.
+
+    This exists because sections were previously chosen per-course in
+    isolation, which produced weekly timetables with lectures stacked on
+    top of each other - a defect the verifier never flagged because time
+    collisions weren't checked anywhere. Greedy with least-flexible-first
+    ordering: courses with the fewest sections choose first, so a
+    single-section course never gets boxed out by a flexible one.
+
+    Returns {"assignments": {course: [slots]}, "overlaps": [...],
+    "excluded_day_hits": [...]} - overlaps/hits list only IRREDUCIBLE
+    problems (no combination of sections avoids them)."""
+    excluded = set(excluded_weekdays or [])
+    valid = [c for c in course_numbers if c in track.courses]
+    # Least flexible first: fewest section options, then most weekly slots.
+    ordered = sorted(
+        valid,
+        key=lambda c: (len(_slots_by_group(track.courses[c])) or 1, -len(track.courses[c].get("schedule", []))),
+    )
+
+    assignments: dict[str, list[dict]] = {}
+    overlaps: list[dict] = []
+    excluded_day_hits: list[dict] = []
+
+    for c in ordered:
+        groups = _slots_by_group(track.courses[c])
+        if not groups:
+            assignments[c] = []
+            continue
+        best_slots, best_cost = None, None
+        for group_id in sorted(groups):
+            slots = groups[group_id]
+            excl_hits = sum(1 for s in slots if s.get("weekday") in excluded)
+            clashes = sum(
+                1
+                for s in slots
+                for other_slots in assignments.values()
+                for o in other_slots
+                if _slots_overlap(s, o)
+            )
+            # Excluded-day violations dominate; then collisions.
+            cost = (excl_hits, clashes)
+            if best_cost is None or cost < best_cost:
+                best_slots, best_cost = slots, cost
+        assignments[c] = best_slots
+        if best_cost[0]:
+            hit_days = sorted({s["weekday"] for s in best_slots if s.get("weekday") in excluded})
+            excluded_day_hits.append({"course": c, "weekdays": hit_days})
+        if best_cost[1]:
+            for s in best_slots:
+                for other_c, other_slots in assignments.items():
+                    if other_c == c:
+                        continue
+                    for o in other_slots:
+                        if _slots_overlap(s, o):
+                            overlaps.append(
+                                {
+                                    "course_a": c,
+                                    "course_b": other_c,
+                                    "weekday": s.get("weekday"),
+                                    "time": f"{s.get('start')}-{s.get('end')}",
+                                }
+                            )
+    # Restore caller order in assignments output
+    return {
+        "assignments": {c: assignments.get(c, []) for c in valid},
+        "overlaps": overlaps,
+        "excluded_day_hits": excluded_day_hits,
+    }
+
+
+def weekly_schedule_analyzer(
+    track: Track, plan_course_numbers: list[str], excluded_weekdays: list[int] | None = None
+) -> dict:
+    """The agent's 'look at the actual week' tool: coordinates sections for
+    the candidate plan and reports what the week really looks like -
+    unavoidable time collisions, excluded-day violations, how many days the
+    student must be on campus, which days stay free, and the heaviest day.
+    Deterministic; the model calls it to sanity-check a candidate's weekly
+    life before delivering, and the UI renders the same assignment."""
+    result = choose_sections(track, plan_course_numbers, excluded_weekdays)
+    day_minutes: dict[int, int] = {}
+    for slots in result["assignments"].values():
+        for s in slots:
+            wd = s.get("weekday")
+            if wd is None:
+                continue
+            day_minutes[wd] = day_minutes.get(wd, 0) + max(_to_minutes(s.get("end")) - _to_minutes(s.get("start")), 0)
+    day_names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+
+    def name_of(c):
+        return track.courses[c]["name"] if c in track.courses else c
+
+    return {
+        "overlap_free": not result["overlaps"],
+        "unavoidable_overlaps": [
+            {
+                "courses": f"{name_of(o['course_a'])} + {name_of(o['course_b'])}",
+                "weekday": day_names[o["weekday"]] if o.get("weekday") is not None and 0 <= o["weekday"] < 6 else o.get("weekday"),
+                "time": o["time"],
+            }
+            for o in result["overlaps"]
+        ],
+        "excluded_day_violations": [
+            {"course": name_of(h["course"]), "weekdays": [day_names[d] for d in h["weekdays"] if 0 <= d < 6]}
+            for h in result["excluded_day_hits"]
+        ],
+        "days_on_campus": len(day_minutes),
+        "free_days": [day_names[d] for d in range(6) if d not in day_minutes],
+        "busiest_day": (
+            {"day": day_names[max(day_minutes, key=day_minutes.get)], "hours": round(max(day_minutes.values()) / 60, 1)}
+            if day_minutes
+            else None
+        ),
+    }
+
+
+def exam_study_planner(track: Track, plan_course_numbers: list[str]) -> dict:
+    """The agent's 'can this exam period actually be studied for' tool: the
+    full chronological exam timeline - moed A AND moed B - with the study
+    days available before each exam, crunch flags, and which single course
+    most relieves the worst crunch if swapped. Moed B matters: students who
+    miss or fail a moed A sit the moed B, and two moed B exams zero days
+    apart is a real (previously invisible) planning defect."""
+    timeline = []
+    for c in plan_course_numbers:
+        if c not in track.courses:
+            continue
+        for moed, label in (("moed_a", "A"), ("moed_b", "B")):
+            for exam in track.courses[c]["exams"].get(moed, []):
+                timeline.append({"date": exam["date"], "course_number": c, "name": track.courses[c]["name"], "moed": label})
+    timeline.sort(key=lambda e: e["date"])
+
+    crunches = []
+    for moed in ("A", "B"):
+        seq = [e for e in timeline if e["moed"] == moed]
+        for prev, cur in zip(seq, seq[1:]):
+            gap = (date.fromisoformat(cur["date"]) - date.fromisoformat(prev["date"])).days
+            cur["study_days_before"] = gap
+            if gap < 3:
+                crunches.append(
+                    {
+                        "moed": moed,
+                        "course_number": cur["course_number"],
+                        "name": cur["name"],
+                        "after": prev["name"],
+                        "study_days": gap,
+                    }
+                )
+
+    # Which course's removal most improves the worst moed-A crunch?
+    relief = None
+    a_seq = [e for e in timeline if e["moed"] == "A"]
+    if len(a_seq) >= 2:
+        def min_gap(entries):
+            gaps = [
+                (date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days
+                for a, b in zip(entries, entries[1:])
+            ]
+            return min(gaps) if gaps else 99
+        base = min_gap(a_seq)
+        best_course, best_gain = None, 0
+        for c in {e["course_number"] for e in a_seq}:
+            without = [e for e in a_seq if e["course_number"] != c]
+            gain = min_gap(without) - base
+            if gain > best_gain:
+                best_course, best_gain = c, gain
+        if best_course:
+            relief = {
+                "swap_candidate": best_course,
+                "name": track.courses[best_course]["name"],
+                "min_study_days_now": base,
+                "min_study_days_without_it": base + best_gain,
+            }
+
+    return {
+        "exam_timeline": timeline,
+        "crunches": crunches,
+        "crunch_free": not crunches,
+        "best_single_swap_to_relieve": relief,
+    }
+
+
+def prereq_unmet_in(track: Track, plan_course_numbers: list[str], passed_courses: list[str], failed_courses: list[str]) -> list[str]:
+    """Courses in a plan the student literally cannot register for -
+    prerequisites unmet (retakes exempt: a failed course's own prereqs were
+    met when they first took it). Used by the delivery backstop: a locked
+    course is as undeliverable as an already-passed one, and the model was
+    observed knowingly including one as an 'anchor' despite the menu."""
+    passed = set(passed_courses)
+    failed = set(failed_courses)
+    return [
+        c
+        for c in plan_course_numbers
+        if c in track.courses
+        and c not in failed
+        and not _prereq_satisfied(track.courses[c]["prerequisites"], passed)
+    ]
 
 
 def check_invariants(
@@ -611,20 +853,37 @@ def verify_plan(
             issues.append({"course": c, "reason": f"not offered in {track.target_semester}"})
         if not _prereq_satisfied(course["prerequisites"], passed):
             issues.append({"course": c, "reason": "prerequisites not met"})
-        # Section-aware weekday check: the schedule data has multiple
-        # registration groups per course, so a course only genuinely
-        # conflicts if its BEST group still has a slot on an excluded day -
-        # "some section meets Sunday" is not "you must attend Sunday".
-        best_slots = pick_section(course, list(excluded_weekdays))
-        for slot in best_slots:
-            if slot["weekday"] in excluded_weekdays:
-                issues.append(
-                    {
-                        "course": c,
-                        "reason": f"{slot['type']} lands on an excluded weekday ({slot['weekday']}) in every section",
-                    }
-                )
-                break
+
+    # Coordinated section check for the WHOLE plan at once: sections are
+    # chosen to dodge excluded days AND each other, so only genuinely
+    # irreducible problems become issues. This is what catches "two
+    # lectures stacked on Tuesday 11:30" - a real delivered-plan defect
+    # that was previously invisible because time collisions were never
+    # checked anywhere.
+    section_plan = choose_sections(track, plan_course_numbers, list(excluded_weekdays))
+    for hit in section_plan["excluded_day_hits"]:
+        issues.append(
+            {
+                "course": hit["course"],
+                "reason": f"meets on an excluded weekday ({', '.join(str(d) for d in hit['weekdays'])}) in every section",
+            }
+        )
+    seen_pairs: set[frozenset] = set()
+    for o in section_plan["overlaps"]:
+        pair = frozenset((o["course_a"], o["course_b"]))
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        other = o["course_b"]
+        issues.append(
+            {
+                "course": o["course_a"],
+                "reason": (
+                    f"class time overlaps with {track.courses[other]['name'] if other in track.courses else other} "
+                    f"({o['time']}) in every section combination"
+                ),
+            }
+        )
 
     total_credits = sum(float(track.courses[c]["points"]) for c in plan_course_numbers if track.courses[c]["points"])
     if not (min_credits <= total_credits <= max_credits):
