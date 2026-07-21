@@ -1,0 +1,1938 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Semester Planning Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F4EEE1; --paper2: #FBF7EE; --card: #FFFFFF; --edge: #E7DCC6;
+    --edge-soft: #EFE7D6; --ink: #232F45; --ink2: #3A465E;
+    --mut: #8B8272; --blue: #3563E9; --blue-deep: #24408F; --red: #D64545;
+    --grn: #2E9E5B; --yel: #FFD84D; --yelsoft: #FFF3C4;
+    --disp: 'Space Grotesk', system-ui, sans-serif;
+    --body: 'Inter', system-ui, sans-serif;
+    --hand: 'Caveat', cursive;
+    --shadow: 0 1px 2px rgba(35,47,69,.05), 0 6px 18px rgba(35,47,69,.06);
+    --shadow-lg: 0 4px 10px rgba(35,47,69,.08), 0 20px 44px rgba(35,47,69,.10);
+    --ring: 0 0 0 3px rgba(53,99,233,.16);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background-color: var(--paper);
+    background-image:
+      radial-gradient(1200px 600px at 80% -10%, rgba(53,99,233,.06), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(255,216,77,.10), transparent 55%),
+      radial-gradient(rgba(35,47,69,.06) 1px, transparent 1px);
+    background-size: auto, auto, 24px 24px;
+    color: var(--ink);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--edge);
+    background: rgba(251,247,238,.75);
+    backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  header .brand { display: flex; align-items: center; gap: 10px; }
+  header .logo {
+    width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+    background: linear-gradient(145deg, var(--blue), var(--blue-deep));
+    display: grid; place-items: center;
+    color: #fff; font-family: var(--disp); font-weight: 700; font-size: .95rem;
+    box-shadow: 0 3px 8px rgba(53,99,233,.35);
+  }
+  header h1 { font-family: var(--disp); font-size: 1.08rem; font-weight: 700; letter-spacing: -.01em; }
+  header .track {
+    font-family: var(--hand); font-size: 1.25rem; color: var(--blue-deep);
+    padding-left: 4px; line-height: 1;
+  }
+  header .budget {
+    margin-left: auto; font-size: .74rem; color: var(--mut); font-variant-numeric: tabular-nums;
+    background: var(--paper2); border: 1px solid var(--edge-soft);
+    padding: 5px 10px; border-radius: 999px;
+  }
+
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 860px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 12px 16px;
+  }
+  .role-label {
+    font-family: var(--disp);
+    font-weight: 700;
+    font-size: .7rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .msg-student { align-self: flex-end; max-width: 80%; background: var(--yelsoft); border-color: var(--yel); }
+  .msg-student .role-label { color: #8a6d00; }
+  .msg-assistant { align-self: flex-start; max-width: 80%; }
+  .msg-assistant .role-label { color: var(--blue); }
+  .msg-tool {
+    align-self: flex-start;
+    max-width: 90%;
+    background: transparent;
+    box-shadow: none;
+    border: 1px dashed var(--edge);
+    font-size: .8rem;
+    color: var(--mut);
+    opacity: .85;
+  }
+  .msg-tool .role-label { color: var(--mut); font-size: .65rem; }
+  .msg-tool pre { white-space: pre-wrap; word-break: break-word; font-size: .72rem; margin-top: 4px; max-height: 160px; overflow-y: auto; }
+  .msg-tool.pass { border-color: var(--grn); }
+  .msg-tool.fail { border-color: var(--red); }
+  .msg-system-note { align-self: center; font-size: .8rem; color: var(--mut); font-style: italic; }
+
+  /* --- Plan result panel --- */
+  .plan-panel { align-self: stretch; width: 100%; }
+  .plan-panel .role-label { color: var(--blue); font-size: .75rem; }
+
+  .plan-stats {
+    display: flex;
+    gap: 10px;
+    margin: 10px 0 16px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 8px 14px;
+    min-width: 100px;
+    flex: 1;
+  }
+  .stat-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--mut); }
+  .stat-value { font-family: var(--disp); font-weight: 700; font-size: 1.15rem; }
+  .stat.pass .stat-value { color: var(--grn); }
+  .stat.fail .stat-value { color: var(--red); }
+
+  .course-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .course-card {
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .course-card-top { display: flex; justify-content: space-between; align-items: start; gap: 6px; }
+  .course-name { font-family: var(--disp); font-weight: 600; font-size: .92rem; direction: rtl; text-align: right; flex: 1; }
+  .retake-badge {
+    font-family: var(--disp); font-size: .62rem; font-weight: 700;
+    background: var(--red); color: white; border-radius: 6px; padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .course-meta { font-size: .75rem; color: var(--mut); margin: 4px 0 8px; }
+  .load-badge {
+    display: inline-block;
+    font-family: var(--disp); font-size: .68rem; font-weight: 700;
+    border-radius: 6px; padding: 3px 8px; margin-bottom: 6px;
+  }
+  .load-light { background: #DCF3E3; color: #1E7A45; }
+  .load-medium { background: var(--yelsoft); color: #8a6d00; }
+  .load-heavy { background: #FBDEDE; color: #A32E2E; }
+  .load-unknown { background: #EEE; color: var(--mut); }
+  .course-schedule { direction: rtl; text-align: right; margin-top: 6px; }
+  .sched-chip {
+    display: inline-block;
+    background: var(--card);
+    border: 1px solid var(--edge);
+    border-radius: 6px;
+    padding: 2px 7px;
+    margin: 0 0 3px 4px;
+    font-size: .68rem;
+    color: var(--mut);
+    direction: rtl;
+    white-space: nowrap;
+  }
+  .sched-chip .sched-time { direction: ltr; unicode-bidi: embed; }
+  .course-review {
+    font-family: var(--hand);
+    font-size: .9rem;
+    color: #4A5570;
+    direction: rtl;
+    text-align: right;
+    margin: 8px 0 4px;
+    padding: 4px 10px 4px 4px;
+    border-right: 3px solid var(--yel);
+    line-height: 1.35;
+  }
+
+  .calendar-container { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .calendar-month {
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 10px;
+    padding: 10px;
+  }
+  .calendar-month-title { font-family: var(--hand); font-size: 1.1rem; color: var(--blue); margin-bottom: 6px; text-align: center; }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 34px); gap: 3px; }
+  .calendar-daylabel { font-size: .62rem; color: var(--mut); text-align: center; font-weight: 600; }
+  .calendar-cell {
+    height: 34px; width: 34px;
+    border-radius: 5px;
+    font-size: .65rem;
+    text-align: center;
+    position: relative;
+    background: var(--card);
+    border: 1px solid var(--edge);
+  }
+  .calendar-cell.empty { background: transparent; border: none; }
+  .calendar-cell.has-exam { border-color: var(--red); background: #FDEDED; }
+  .calendar-daynum { padding-top: 2px; color: var(--mut); font-size: .62rem; }
+  .calendar-cell.has-exam .calendar-daynum { color: var(--ink); font-weight: 700; }
+  .exam-chip {
+    font-family: var(--disp); font-size: .55rem; font-weight: 700;
+    background: var(--red); color: white; border-radius: 4px;
+    padding: 0 2px; margin: 0 1px; display: inline-block; line-height: 1.3;
+  }
+
+  .plan-issues {
+    font-size: .8rem;
+    color: #A32E2E;
+    background: #FDEDED;
+    border: 1px solid #F3C6C6;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .plan-issues-title {
+    font-family: var(--disp);
+    font-weight: 700;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-bottom: 4px;
+  }
+  .plan-issues ul { margin: 0; padding-inline-start: 18px; }
+  .plan-issues li { margin: 3px 0; line-height: 1.4; }
+  .plan-explanation { white-space: pre-wrap; font-size: .92rem; line-height: 1.55; }
+  .plan-explanation strong { font-weight: 600; }
+  .plan-status-hint {
+    font-size: .78rem;
+    color: var(--mut);
+    font-style: italic;
+    margin-bottom: 10px;
+  }
+  .plan-feedback-prompt {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px dashed var(--edge);
+    font-family: var(--hand);
+    font-size: 1.15rem;
+    color: var(--blue);
+  }
+
+  #composer {
+    border-top: 1px solid var(--edge);
+    background: rgba(251,247,238,.75);
+    backdrop-filter: blur(8px);
+    padding: 14px 20px 18px;
+    display: flex;
+    gap: 10px;
+    max-width: 880px;
+    width: 100%;
+    margin: 0 auto;
+    align-items: flex-end;
+  }
+  #composer textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-family: var(--body);
+    font-size: .95rem;
+    line-height: 1.45;
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: var(--shadow);
+    transition: border-color .15s, box-shadow .15s;
+  }
+  #composer textarea:focus { outline: none; border-color: var(--blue); box-shadow: var(--ring); }
+  #composer textarea::placeholder { color: #B4AC9B; }
+  #composer button {
+    font-family: var(--disp);
+    font-weight: 700;
+    font-size: .9rem;
+    background: linear-gradient(145deg, var(--blue), var(--blue-deep));
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 0 22px;
+    height: 46px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(53,99,233,.30);
+    transition: transform .1s, box-shadow .15s, opacity .15s;
+  }
+  #composer button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(53,99,233,.38); }
+  #composer button:disabled { opacity: .45; cursor: default; box-shadow: none; }
+
+  #config {
+    max-width: 880px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 6px 22px 0;
+    font-size: .68rem;
+    color: #B4AC9B;
+    opacity: .7;
+  }
+  #config:hover { opacity: 1; }
+  #config input { font-family: monospace; font-size: .68rem; padding: 2px 6px; border: 1px solid var(--edge-soft); border-radius: 6px; width: 200px; background: transparent; color: var(--mut); }
+
+  /* --- Intake form --- */
+  .intake-form {
+    max-width: 860px;
+    width: calc(100% - 40px);
+    margin: 20px auto;
+  }
+  .intake-section { margin: 16px 0; }
+  .intake-label {
+    display: block;
+    font-family: var(--disp);
+    font-weight: 600;
+    font-size: .85rem;
+    margin-bottom: 8px;
+  }
+  .toggle-group { display: flex; gap: 6px; flex-wrap: wrap; }
+  .toggle-btn {
+    font-family: var(--body);
+    font-size: .82rem;
+    border: 1px solid var(--edge);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+  }
+  .toggle-btn { transition: background .12s, border-color .12s, transform .08s; }
+  .toggle-btn:hover { border-color: var(--blue); }
+  .toggle-btn:active { transform: scale(.97); }
+  .toggle-btn.active { background: var(--blue); color: white; border-color: var(--blue); box-shadow: 0 3px 8px rgba(53,99,233,.28); }
+  .toggle-btn.active.danger { background: var(--red); border-color: var(--red); box-shadow: 0 3px 8px rgba(214,69,69,.28); }
+
+  /* Track selector - larger, card-like choices */
+  #trackSelectForm { text-align: center; }
+  #trackSelectForm .role-label { font-size: .8rem; color: var(--mut); margin-bottom: 14px; }
+  #trackToggle { justify-content: center; gap: 10px; }
+  #trackToggle .toggle-btn {
+    font-family: var(--disp); font-weight: 600; font-size: .95rem;
+    padding: 16px 22px; border-radius: 14px; direction: rtl;
+    background: var(--card); box-shadow: var(--shadow);
+  }
+  #trackToggle .toggle-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-color: var(--blue); }
+
+  /* Welcome hero shown in the log once a track is picked */
+  .welcome {
+    align-self: stretch;
+    background: linear-gradient(160deg, var(--paper2), #fff);
+    border: 1px solid var(--edge);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: 22px 24px;
+  }
+  .welcome h2 { font-family: var(--disp); font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; letter-spacing: -.01em; }
+  .welcome p { color: var(--ink2); font-size: .92rem; line-height: 1.55; max-width: 60ch; }
+  .welcome .steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .welcome .step {
+    font-size: .78rem; color: var(--ink2);
+    background: var(--paper); border: 1px solid var(--edge-soft);
+    border-radius: 999px; padding: 5px 12px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .welcome .step b { font-family: var(--disp); color: var(--blue-deep); }
+
+  .course-checklist { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; padding: 4px; border: 1px solid var(--edge); border-radius: 10px; }
+  .course-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+  }
+  .course-row:nth-child(odd) { background: var(--paper); }
+  .course-row-name { font-size: .82rem; direction: rtl; text-align: right; flex: 1; }
+  .course-row-toggles { display: flex; gap: 4px; flex-shrink: 0; }
+  .course-row-toggles .toggle-btn { padding: 4px 9px; font-size: .72rem; }
+
+  #gapSubmit {
+    font-family: var(--disp);
+    font-weight: 700;
+    background: var(--blue);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 24px;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  #gapSubmit:disabled { opacity: .5; cursor: default; }
+  /* ===== Ambient animated background ===== */
+  .bg-scene { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+  .bg-item {
+    position: absolute;
+    top: 110%;
+    left: var(--x, 50%);
+    font-size: var(--s, 28px);
+    color: var(--blue-deep);
+    opacity: var(--o, .06);
+    user-select: none;
+    animation: drift var(--d, 46s) linear infinite;
+    animation-delay: var(--delay, 0s);
+    will-change: transform;
+  }
+  @keyframes drift {
+    from { transform: translateY(0) rotate(0deg); }
+    to   { transform: translateY(-135vh) rotate(var(--r, 35deg)); }
+  }
+
+  /* ===== Plan reveal sequence ===== */
+  .reveal { opacity: 0; animation: rise .55s cubic-bezier(.2,.7,.3,1) forwards; animation-delay: var(--rd, 0s); }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px) scale(.985); }
+    to   { opacity: 1; transform: none; }
+  }
+  .stat-value { font-variant-numeric: tabular-nums; }
+
+  /* ===== Agent working card ===== */
+  .working-card { align-self: flex-start; max-width: 80%; }
+  .working-card .role-label { color: var(--blue); }
+  .working-step { font-size: .9rem; color: var(--ink2); min-height: 1.4em; transition: opacity .25s; }
+  .working-step.fade { opacity: 0; }
+  .working-bar {
+    margin-top: 10px; height: 4px; border-radius: 999px; overflow: hidden;
+    background: linear-gradient(90deg, var(--edge-soft) 0%, var(--blue) 45%, var(--yel) 55%, var(--edge-soft) 100%);
+    background-size: 220% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+  @keyframes shimmer { to { background-position: -220% 0; } }
+
+  /* ===== Quick-reply chips ===== */
+  .quick-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .quick-chip {
+    font-family: var(--disp); font-weight: 600; font-size: .82rem;
+    color: var(--ink2); background: var(--paper);
+    border: 1px solid var(--edge); border-radius: 999px;
+    padding: 8px 15px; cursor: pointer;
+    transition: transform .12s, box-shadow .15s, border-color .15s, color .15s;
+  }
+  .quick-chip:hover { border-color: var(--blue); color: var(--blue-deep); transform: translateY(-2px); box-shadow: var(--shadow); }
+  .quick-chip:active { transform: scale(.96); }
+
+  /* ===== Verified-plan confetti ===== */
+  .confetti {
+    position: fixed; top: -14px; z-index: 60;
+    width: 9px; height: 13px; border-radius: 2px; pointer-events: none;
+    animation: fall var(--fd, 2.4s) ease-in forwards;
+  }
+  @keyframes fall {
+    to { transform: translateY(108vh) rotate(var(--fr, 560deg)); opacity: .85; }
+  }
+  .stat.pass.celebrate { animation: pop .6s cubic-bezier(.2,.7,.3,1.4); }
+  @keyframes pop { 0% { transform: scale(1); } 45% { transform: scale(1.12); } 100% { transform: scale(1); } }
+
+  /* ===== Micro-interactions ===== */
+  .course-card { transition: transform .18s, box-shadow .18s, border-color .18s; }
+  .course-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); border-color: var(--blue); }
+  .exam-chip { animation: chipPing .45s cubic-bezier(.2,.7,.3,1.4) both; animation-delay: var(--pd, 0s); }
+  @keyframes chipPing { 0% { transform: scale(0); } 70% { transform: scale(1.3); } 100% { transform: scale(1); } }
+  .msg-student, .msg-assistant { animation: rise .4s cubic-bezier(.2,.7,.3,1); }
+
+  /* ===== Why-note + diff badges ===== */
+  .course-why {
+    font-size: .74rem; color: var(--blue-deep);
+    margin: 2px 0 6px; font-style: italic;
+  }
+  .diff-badge {
+    font-family: var(--disp); font-size: .6rem; font-weight: 700;
+    border-radius: 6px; padding: 2px 6px; white-space: nowrap;
+  }
+  .diff-added { background: #DCF3E3; color: #1E7A45; }
+  .diff-kept { background: var(--paper); color: var(--mut); border: 1px solid var(--edge); }
+  .diff-banner {
+    font-size: .8rem; color: var(--ink2);
+    background: var(--paper2); border: 1px dashed var(--edge);
+    border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;
+  }
+  .diff-banner .removed { color: #A32E2E; text-decoration: line-through; }
+  .diff-banner .added { color: #1E7A45; font-weight: 600; }
+
+  /* ===== Weekly timetable ===== */
+  .timetable {
+    background: var(--paper);
+    border: 1px solid var(--edge);
+    border-radius: 12px;
+    padding: 14px 12px 12px;
+    margin-bottom: 16px;
+    overflow-x: auto;
+  }
+  .timetable-title {
+    font-family: var(--hand); font-size: 1.15rem; color: var(--blue-deep);
+    margin-bottom: 10px; text-align: center;
+  }
+  .tt-grid { display: flex; gap: 6px; min-width: 560px; }
+  .tt-times { width: 40px; flex-shrink: 0; position: relative; }
+  .tt-time-label {
+    position: absolute; right: 4px; transform: translateY(-50%);
+    font-size: .6rem; color: var(--mut); font-variant-numeric: tabular-nums;
+  }
+  .tt-day { flex: 1; min-width: 78px; }
+  .tt-day-name {
+    text-align: center; font-family: var(--disp); font-weight: 600;
+    font-size: .72rem; color: var(--ink2); margin-bottom: 4px;
+  }
+  .tt-day-col {
+    position: relative; height: var(--tt-height);
+    background: var(--card); border: 1px solid var(--edge-soft); border-radius: 8px;
+    background-image: repeating-linear-gradient(to bottom, transparent, transparent 43px, var(--edge-soft) 43px, var(--edge-soft) 44px);
+  }
+  .tt-block {
+    position: absolute; left: 3px; right: 3px;
+    border-radius: 6px; padding: 3px 6px;
+    font-size: .62rem; line-height: 1.25; overflow: hidden;
+    color: #fff; cursor: grab;
+    border: 1px solid rgba(0,0,0,.12);
+    box-shadow: 0 1px 3px rgba(35,47,69,.18);
+    animation: rise .5s cubic-bezier(.2,.7,.3,1) both;
+    animation-delay: var(--td, 0s);
+    transition: transform .15s, box-shadow .15s, opacity .15s;
+    direction: rtl; text-align: right;
+  }
+  .tt-block:hover { transform: scale(1.04); box-shadow: 0 4px 12px rgba(35,47,69,.3); z-index: 5; }
+  .tt-block:active { cursor: grabbing; }
+  .tt-block.dragging { opacity: .5; }
+  .tt-block .tt-name { font-weight: 700; }
+  .tt-block .tt-meta { opacity: .85; direction: ltr; unicode-bidi: embed; text-align: right; }
+  .tt-hint { font-size: .68rem; color: var(--mut); text-align: center; margin-top: 8px; font-style: italic; }
+
+  /* ===== Header toggles + print ===== */
+  .hdr-toggle {
+    font-family: var(--disp); font-weight: 600; font-size: .72rem;
+    background: var(--paper2); color: var(--ink2);
+    border: 1px solid var(--edge-soft); border-radius: 999px;
+    padding: 5px 11px; cursor: pointer; transition: border-color .15s, color .15s;
+  }
+  .hdr-toggle:hover { border-color: var(--blue); color: var(--blue-deep); }
+  .plan-toolbar { margin-top: 8px; }
+  .welcome-back .quick-chips { margin-top: 12px; }
+  [dir="rtl"] .msg-student { align-self: flex-start; }
+  [dir="rtl"] .msg-assistant { align-self: flex-end; }
+  [dir="rtl"] header .budget { margin-left: 0; margin-right: auto; }
+  @media print {
+    header, #composer, #config, .bg-scene, .quick-chips, .plan-feedback-prompt,
+    #trackSelectForm, #gapFillPanel, .msg-student, .msg-assistant, .working-card,
+    .msg-system-note, .welcome { display: none !important; }
+    body { background: #fff !important; }
+    #log { overflow: visible; }
+    .card { box-shadow: none !important; border-color: #ccc !important; }
+    .reveal { opacity: 1 !important; animation: none !important; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .bg-item, .reveal, .exam-chip, .working-bar, .confetti,
+    .msg-student, .msg-assistant, .stat.pass.celebrate { animation: none !important; opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">◆</div>
+    <h1>Semester Planner</h1>
+  </div>
+  <span class="track" id="headerTrack">Pick your track to begin</span>
+  <span class="budget" id="budget">session cost: $0.0000</span>
+</header>
+
+<div id="log"></div>
+
+<div id="trackSelectForm" class="card intake-form">
+  <span class="role-label">Which track are you in?</span>
+  <div class="toggle-group" id="trackToggle">Loading tracks…</div>
+</div>
+
+<!-- Shown only after the student has already spoken and the agent found
+     genuine gaps - sections appear individually based on missing_fields, so
+     a student who already said everything relevant never sees this at all. -->
+<div id="gapFillPanel" class="card intake-form" style="display:none">
+  <span class="role-label">Just need a couple more things</span>
+
+  <div class="intake-section" id="gapSemesterSection" style="display:none">
+    <label class="intake-label">Which semester are you starting?</label>
+    <div class="toggle-group" id="semesterToggle"></div>
+  </div>
+
+  <div class="intake-section" id="gapWeekdaySection" style="display:none">
+    <label class="intake-label">Any days you can't attend classes?</label>
+    <div class="toggle-group" id="weekdayToggle"></div>
+  </div>
+
+  <div class="intake-section" id="gapPaceSection" style="display:none">
+    <label class="intake-label">Preferred pace this semester</label>
+    <div class="toggle-group" id="paceToggle"></div>
+  </div>
+
+  <div class="intake-section" id="gapCoursesSection" style="display:none">
+    <label class="intake-label">
+      Required courses you should have finished by now - defaults to "Passed", flip any exception to "Failed"
+    </label>
+    <div id="courseChecklist" class="course-checklist">Loading course list…</div>
+  </div>
+
+  <button id="gapSubmit">Continue</button>
+</div>
+
+<div id="config">
+  backend: <input id="backendUrl" value="http://127.0.0.1:8787" spellcheck="false">
+  <span id="statusNote"></span>
+</div>
+
+<div id="composer" style="display:none">
+  <textarea id="input" rows="2" placeholder="Tell me about your semester — which courses you've passed or failed, any days you can't attend, and your preferred pace…"></textarea>
+  <button id="send">Send</button>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const budgetEl = document.getElementById('budget');
+const backendUrlEl = document.getElementById('backendUrl');
+const statusNoteEl = document.getElementById('statusNote');
+
+// ===== Ambient animated background =====
+function buildBgScene() {
+  const glyphs = ['π', '∑', '√', '∫', 'ƒ', 'λ', '≠', '±', '\u{1F4D6}', '\u{1F4D0}', '✏️', '\u{1F393}', '\u{1F4C5}', '⊕'];
+  const scene = document.createElement('div');
+  scene.className = 'bg-scene';
+  scene.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 16; i++) {
+    const item = document.createElement('span');
+    item.className = 'bg-item';
+    item.textContent = glyphs[i % glyphs.length];
+    item.style.setProperty('--x', (Math.random() * 96) + '%');
+    item.style.setProperty('--s', (18 + Math.random() * 26) + 'px');
+    item.style.setProperty('--d', (34 + Math.random() * 40) + 's');
+    item.style.setProperty('--delay', (-Math.random() * 60) + 's');
+    item.style.setProperty('--r', (Math.random() * 140 - 70) + 'deg');
+    item.style.setProperty('--o', (0.04 + Math.random() * 0.05).toFixed(3));
+    scene.appendChild(item);
+  }
+  document.body.prepend(scene);
+}
+buildBgScene();
+
+// ===== Hebrew (RTL) mode =====
+const heMode = localStorage.getItem('planner_lang') === 'he';
+const HE = {
+  'Pick your track to begin': 'בחרו מסלול כדי להתחיל',
+  'Which track are you in?': 'באיזה מסלול אתם לומדים?',
+  "Let's plan your next semester 👋": 'בואו נתכנן את הסמסטר הבא 👋',
+  'welcome_p': 'ספרו לי איפה אתם עומדים ואבנה עבורכם תוכנית סמסטר — שתאזן חזרות על קורסים, מרווחי מבחנים, עומס, והימים הפנויים שלכם. פשוט כתבו בחופשיות; אשאל שאלות המשך רק אם משהו באמת חסר.',
+  'You describe your situation': 'אתם מספרים איפה אתם עומדים',
+  'I plan & check it against every constraint': 'אני מתכנן ובודק מול כל האילוצים',
+  'You review & refine': 'אתם מעיינים ומלטשים',
+  'placeholder_intake': 'ספרו לי על הסמסטר שלכם — אילו קורסים עברתם או נכשלתם, ימים לא פנויים, והקצב המועדף…',
+  'placeholder_pass': 'שינויים או הערות אחרונות? (למשל "החליפו את הקורס של יום שלישי")',
+  'placeholder_fail': 'כתבו התאמה ואתקן — למשל "הורידו את הקורס עם הדרישות החסרות".',
+  'Send': 'שליחה', 'Continue': 'המשך',
+  'Your Plan': 'התוכנית שלכם',
+  'Verified': 'אימות', 'Credits': 'נק"ז', 'Workload': 'עומס', 'Pace': 'קצב',
+  'PASS': 'עבר', 'NEEDS REVIEW': 'דורש עיון',
+  'on track': 'בקצב', 'slightly behind': 'מעט מאחור', 'behind': 'בפיגור',
+  'Open issues': 'בעיות פתוחות',
+  'This plan is ready to go ✨ Anything you\'d like to change?': 'התוכנית מוכנה ✨ רוצים לשנות משהו?',
+  'Anything you\'d like to change? Pick a quick action or reply below.': 'רוצים לשנות משהו? בחרו פעולה מהירה או כתבו למטה.',
+  'Looks perfect ✓': 'נראה מושלם ✓', 'Swap a course': 'החלפת קורס', 'Make it lighter': 'להקל את העומס',
+  'Fix the open issues': 'תקנו את הבעיות', 'I\'m fine with the trade-off': 'אני שלם עם הפשרה',
+  'Your week': 'השבוע שלכם',
+  'Drag a course off the grid (or double-click it) to ask for a swap': 'גררו קורס אל מחוץ ללוח (או לחצו פעמיים) כדי לבקש החלפה',
+  'Add to calendar': 'הוספה ליומן', 'Print': 'הדפסה', 'Share image': 'שיתוף תמונה',
+  'Welcome back!': '!ברוכים השבים', 'Continue where you left off': 'להמשיך מאיפה שעצרנו', 'Start fresh': 'להתחיל מחדש',
+  'Revised: kept': 'עודכן: נשמרו', 'removed': 'הוסרו', 'added': 'נוספו',
+};
+function t(s) { return (heMode && HE[s]) || s; }
+if (heMode) document.documentElement.dir = 'rtl';
+
+// ===== Soft sound design (off by default) =====
+let soundOn = localStorage.getItem('planner_sound') === 'on';
+let audioCtx = null;
+function playTone(freq, duration, type, gain) {
+  if (!soundOn) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    g.gain.value = gain || 0.04;
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+    osc.connect(g); g.connect(audioCtx.destination);
+    osc.start(); osc.stop(audioCtx.currentTime + duration);
+  } catch {}
+}
+const tick = () => playTone(880, 0.06, 'square', 0.02);
+const chime = () => { playTone(660, 0.35); setTimeout(() => playTone(990, 0.5), 130); };
+
+// ===== Session memory (localStorage) =====
+function saveSession(planResult) {
+  try {
+    localStorage.setItem('planner_session', JSON.stringify({
+      trackId: selectedTrackId,
+      trackName: document.getElementById('headerTrack').textContent,
+      messages, costUsd, knownContext,
+      lastPlanResult: planResult || (JSON.parse(localStorage.getItem('planner_session') || '{}').lastPlanResult || null),
+      savedAt: Date.now(),
+    }));
+  } catch {}
+}
+function loadSession() {
+  try { return JSON.parse(localStorage.getItem('planner_session') || 'null'); } catch { return null; }
+}
+
+// ===== Export: .ics calendar =====
+function downloadIcs(planResult) {
+  const pad = n => String(n).padStart(2, '0');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SemesterPlanner//EN'];
+  let uid = 0;
+  for (const course of planResult.courses || []) {
+    for (const [label, entries] of Object.entries(course.exams || {})) {
+      for (const e of entries) {
+        const d = e.date.replace(/-/g, '');
+        lines.push('BEGIN:VEVENT', `UID:exam-${++uid}@planner`, `DTSTART;VALUE=DATE:${d}`,
+          `SUMMARY:📝 ${course.name} (${label.replace('_', ' ')})`, 'END:VEVENT');
+      }
+    }
+    // Weekly classes as recurring events for ~13 weeks starting from the
+    // next occurrence of each slot's weekday.
+    for (const s of slotsForTimetable(course)) {
+      if (s.weekday == null || !s.start || !s.end) continue;
+      const now = new Date();
+      const target = new Date(now);
+      target.setDate(now.getDate() + ((s.weekday - now.getDay() + 7) % 7 || 7));
+      const ds = `${target.getFullYear()}${pad(target.getMonth() + 1)}${pad(target.getDate())}`;
+      lines.push('BEGIN:VEVENT', `UID:class-${++uid}@planner`,
+        `DTSTART:${ds}T${s.start.replace(':', '')}00`,
+        `DTEND:${ds}T${s.end.replace(':', '')}00`,
+        'RRULE:FREQ=WEEKLY;COUNT=13',
+        `SUMMARY:${course.name} — ${s.type}`, 'END:VEVENT');
+    }
+  }
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'semester-plan.ics';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ===== Share: PNG plan card =====
+function downloadPlanImage(planResult) {
+  const courses = planResult.courses || [];
+  const W = 800, rowH = 44, headerH = 150, footerH = 60;
+  const H = headerH + courses.length * rowH + footerH;
+  const canvas = document.createElement('canvas');
+  canvas.width = W * 2; canvas.height = H * 2;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(2, 2);
+
+  ctx.fillStyle = '#F4EEE1'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#3563E9'; ctx.fillRect(0, 0, W, 84);
+  ctx.fillStyle = '#fff';
+  ctx.font = '700 26px "Space Grotesk", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Semester Plan', 24, 40);
+  ctx.font = '400 15px Inter, sans-serif';
+  ctx.fillText(document.getElementById('headerTrack').textContent, 24, 66);
+
+  const v = planResult.verify || {};
+  ctx.fillStyle = '#232F45';
+  ctx.font = '600 15px Inter, sans-serif';
+  ctx.fillText(`${v.pass ? '✓ Verified' : '△ Needs review'} · ${v.total_credits ?? '—'} credits · workload ${v.workload_score ?? '—'}/100`, 24, 116);
+
+  courses.forEach((c, i) => {
+    const y = headerH + i * rowH;
+    ctx.fillStyle = i % 2 ? '#FBF7EE' : '#FFFFFF';
+    ctx.fillRect(16, y - 26, W - 32, rowH - 6);
+    ctx.fillStyle = '#232F45';
+    ctx.font = '600 15px Inter, sans-serif';
+    ctx.direction = 'rtl'; ctx.textAlign = 'right';
+    ctx.fillText(c.name, W - 30, y);
+    ctx.direction = 'ltr'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#8B8272';
+    ctx.font = '400 13px Inter, sans-serif';
+    const exam = (c.exams?.moed_a || [])[0];
+    ctx.fillText(`${c.course_number} · ${c.points} pts${exam ? ' · exam ' + exam.date : ''}${c.is_retake ? ' · RETAKE' : ''}`, 30, y);
+  });
+
+  ctx.fillStyle = '#8B8272';
+  ctx.font = 'italic 400 13px Inter, sans-serif';
+  ctx.fillText('Built by my Semester Planning Agent 🤖', 24, H - 24);
+
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = 'semester-plan.png';
+  a.click();
+}
+
+// ===== Agent working animation =====
+const WORKING_STEPS = [
+  'Reading your progress…',
+  'Auditing degree requirements…',
+  'Mapping prerequisite chains…',
+  'Drafting a candidate plan…',
+  'Checking exam spacing…',
+  'Verifying against every constraint…',
+  'Weighing alternatives…',
+  'Polishing the plan…',
+];
+let workingEl = null;
+let workingTimer = null;
+
+function showAgentWorking() {
+  hideAgentWorking();
+  const body = document.createElement('div');
+  const step = document.createElement('div');
+  step.className = 'working-step';
+  step.textContent = WORKING_STEPS[0];
+  const bar = document.createElement('div');
+  bar.className = 'working-bar';
+  body.appendChild(step);
+  body.appendChild(bar);
+  workingEl = addCard('working-card', 'Agent · planning', body);
+  let i = 0;
+  workingTimer = setInterval(() => {
+    i = (i + 1) % WORKING_STEPS.length;
+    step.classList.add('fade');
+    setTimeout(() => { step.textContent = WORKING_STEPS[i]; step.classList.remove('fade'); }, 250);
+  }, 2400);
+}
+
+function hideAgentWorking() {
+  if (workingTimer) { clearInterval(workingTimer); workingTimer = null; }
+  if (workingEl) { workingEl.remove(); workingEl = null; }
+}
+
+// Called with a REAL step label streamed from the backend - takes over from
+// the canned cycler so the card shows what the agent is actually doing.
+function setWorkingStep(label) {
+  if (!label || !workingEl) return;
+  if (workingTimer) { clearInterval(workingTimer); workingTimer = null; }
+  const step = workingEl.querySelector('.working-step');
+  if (step) {
+    step.classList.add('fade');
+    setTimeout(() => { step.textContent = label; step.classList.remove('fade'); }, 180);
+  }
+}
+
+// ===== Count-up numbers =====
+function animateNumber(el, target, decimals, suffix) {
+  const start = performance.now();
+  const duration = 900;
+  function tick(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    el.textContent = (target * eased).toFixed(decimals) + (suffix || '');
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ===== Verified-plan confetti =====
+function celebrate() {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const colors = ['#3563E9', '#FFD84D', '#2E9E5B', '#D64545', '#24408F'];
+  for (let i = 0; i < 44; i++) {
+    const piece = document.createElement('div');
+    piece.className = 'confetti';
+    piece.style.left = (Math.random() * 100) + 'vw';
+    piece.style.background = colors[i % colors.length];
+    piece.style.setProperty('--fd', (1.8 + Math.random() * 1.4) + 's');
+    piece.style.setProperty('--fr', (Math.random() * 900 - 450) + 'deg');
+    piece.style.animationDelay = (Math.random() * 0.5) + 's';
+    piece.addEventListener('animationend', () => piece.remove());
+    document.body.appendChild(piece);
+  }
+}
+
+let messages = [];
+let costUsd = 0;
+// Resolved student state + the delivered plan, returned by the backend and
+// echoed back on every subsequent request - this is what makes a follow-up
+// message ("I have a wedding on an exam date") revise the existing plan
+// instead of the agent re-deriving everything and drafting a new one.
+let knownContext = null;
+
+function addCard(className, labelText, bodyEl) {
+  const card = document.createElement('div');
+  card.className = `card ${className}`;
+  const label = document.createElement('span');
+  label.className = 'role-label';
+  label.textContent = labelText;
+  card.appendChild(label);
+  card.appendChild(bodyEl);
+  logEl.appendChild(card);
+  logEl.scrollTop = logEl.scrollHeight;
+  return card;
+}
+
+function textNode(text) {
+  const p = document.createElement('div');
+  p.style.whiteSpace = 'pre-wrap';
+  p.textContent = text;
+  return p;
+}
+
+// The model sometimes emits markdown bold (**like this**) in its prose;
+// rendering it as literal asterisks looks broken. Build DOM nodes instead
+// of innerHTML so the text itself can never inject markup.
+function richTextInto(el, text) {
+  const parts = String(text || '').split('**');
+  parts.forEach((part, i) => {
+    if (i % 2 === 1 && part) {
+      const strong = document.createElement('strong');
+      strong.textContent = part;
+      el.appendChild(strong);
+    } else if (part) {
+      el.appendChild(document.createTextNode(part));
+    }
+  });
+  return el;
+}
+
+function richTextNode(text) {
+  const p = document.createElement('div');
+  p.style.whiteSpace = 'pre-wrap';
+  return richTextInto(p, text);
+}
+
+function addStudentMessage(text) {
+  addCard('msg-student', 'You', textNode(text));
+}
+
+function addAssistantMessage(text) {
+  addCard('msg-assistant', 'Agent', richTextNode(text));
+}
+
+function addSystemNote(text) {
+  const div = document.createElement('div');
+  div.className = 'msg-system-note';
+  div.textContent = text;
+  logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function buildCourseCard(course) {
+  const card = document.createElement('div');
+  card.className = 'course-card';
+
+  const top = document.createElement('div');
+  top.className = 'course-card-top';
+  const name = document.createElement('div');
+  name.className = 'course-name';
+  name.textContent = course.name;
+  top.appendChild(name);
+  if (course.is_retake) {
+    const badge = document.createElement('span');
+    badge.className = 'retake-badge';
+    badge.textContent = 'RETAKE';
+    top.appendChild(badge);
+  }
+  if (course._diff === 'added') {
+    const badge = document.createElement('span');
+    badge.className = 'diff-badge diff-added';
+    badge.textContent = 'NEW';
+    top.appendChild(badge);
+  }
+  card.appendChild(top);
+
+  const meta = document.createElement('div');
+  meta.className = 'course-meta';
+  meta.textContent = `${course.course_number} · ${course.points} pts`;
+  card.appendChild(meta);
+
+  if (course.why) {
+    const why = document.createElement('div');
+    why.className = 'course-why';
+    why.textContent = '↳ ' + course.why;
+    card.appendChild(why);
+  }
+
+  const cf = course.cheesefork || {};
+  const loadBadge = document.createElement('div');
+  loadBadge.className = `load-badge load-${cf.load || 'unknown'}`;
+  loadBadge.textContent = cf.avg_difficulty
+    ? `${(cf.load || 'unknown').toUpperCase()} · difficulty ${cf.avg_difficulty}/5 · liked ${cf.avg_general}/5 (${cf.review_count} reviews)`
+    : 'NO REVIEW DATA';
+  card.appendChild(loadBadge);
+
+  // Elective courses are a choice worth justifying with what students
+  // actually say; mandatory retakes/requirements aren't optional, so a
+  // review excerpt there would just be noise.
+  if (!course.is_mandatory && cf.sample_reviews && cf.sample_reviews.length) {
+    const review = document.createElement('div');
+    review.className = 'course-review';
+    review.textContent = `"${cf.sample_reviews[0]}"`;
+    card.appendChild(review);
+  }
+
+  if (course.schedule && course.schedule.length) {
+    const sched = document.createElement('div');
+    sched.className = 'course-schedule';
+    for (const s of course.schedule) {
+      const chip = document.createElement('span');
+      chip.className = 'sched-chip';
+      chip.appendChild(document.createTextNode(`${s.type} ${DAY_NAMES[s.weekday]} `));
+      const time = document.createElement('span');
+      time.className = 'sched-time';
+      time.textContent = `${s.start}-${s.end}`;
+      chip.appendChild(time);
+      sched.appendChild(chip);
+    }
+    card.appendChild(sched);
+  }
+
+  return card;
+}
+
+function renderMonthGrid(year, month, examsByDate) {
+  const wrap = document.createElement('div');
+  wrap.className = 'calendar-month';
+
+  const title = document.createElement('div');
+  title.className = 'calendar-month-title';
+  title.textContent = `${MONTH_NAMES[month - 1]} ${year}`;
+  wrap.appendChild(title);
+
+  const grid = document.createElement('div');
+  grid.className = 'calendar-grid';
+  for (const d of DAY_NAMES.slice(0, 7)) {
+    const cell = document.createElement('div');
+    cell.className = 'calendar-daylabel';
+    cell.textContent = d;
+    grid.appendChild(cell);
+  }
+
+  const startWeekday = new Date(year, month - 1, 1).getDay();
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  for (let i = 0; i < startWeekday; i++) {
+    const empty = document.createElement('div');
+    empty.className = 'calendar-cell empty';
+    grid.appendChild(empty);
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const cell = document.createElement('div');
+    cell.className = 'calendar-cell';
+    const num = document.createElement('div');
+    num.className = 'calendar-daynum';
+    num.textContent = day;
+    cell.appendChild(num);
+
+    const exams = examsByDate[dateStr];
+    if (exams) {
+      cell.classList.add('has-exam');
+      for (const exam of exams) {
+        const chip = document.createElement('span');
+        chip.className = 'exam-chip';
+        chip.style.setProperty('--pd', (0.3 + Math.random() * 0.7).toFixed(2) + 's');
+        chip.textContent = exam.course_number.slice(-3);
+        chip.title = `${exam.name} — ${exam.label}`;
+        cell.appendChild(chip);
+      }
+    }
+    grid.appendChild(cell);
+  }
+
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+function buildExamCalendar(courses) {
+  const examsByDate = {};
+  for (const course of courses) {
+    for (const [label, entries] of Object.entries(course.exams || {})) {
+      for (const e of entries) {
+        (examsByDate[e.date] = examsByDate[e.date] || []).push({
+          course_number: course.course_number, name: course.name, label,
+        });
+      }
+    }
+  }
+
+  const months = new Set(Object.keys(examsByDate).map(d => d.slice(0, 7)));
+  if (months.size === 0) return null;
+
+  const container = document.createElement('div');
+  container.className = 'calendar-container';
+  for (const key of Array.from(months).sort()) {
+    const [y, m] = key.split('-').map(Number);
+    container.appendChild(renderMonthGrid(y, m, examsByDate));
+  }
+  return container;
+}
+
+// ===== Weekly timetable =====
+const TT_COLORS = ['#3563E9', '#2E9E5B', '#B4741E', '#7C4DD8', '#D64545', '#1D8A96', '#946BDE', '#C2543B'];
+
+function slotsForTimetable(course) {
+  if (course.timetable_slots && course.timetable_slots.length) return course.timetable_slots;
+  // Fallback for older payloads: first registration group's slots only,
+  // so the grid doesn't show every section overlaid.
+  const byGroup = {};
+  for (const s of course.schedule || []) (byGroup[s.group || 0] = byGroup[s.group || 0] || []).push(s);
+  const first = Object.keys(byGroup).sort((a, b) => a - b)[0];
+  return first != null ? byGroup[first] : [];
+}
+
+function toMinutes(hhmm) {
+  const [h, m] = String(hhmm || '0:0').split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+function requestSwap(courseName) {
+  inputEl.value = `Please swap out ${courseName} for a different course - keep everything else the same.`;
+  inputEl.focus();
+  inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+}
+
+function buildWeeklyTimetable(courses) {
+  const allSlots = [];
+  courses.forEach((course, idx) => {
+    for (const s of slotsForTimetable(course)) {
+      if (s.weekday == null || !s.start || !s.end) continue;
+      allSlots.push({ course, idx, slot: s });
+    }
+  });
+  if (!allSlots.length) return null;
+
+  const PX_PER_HOUR = 44;
+  let minStart = Math.min(...allSlots.map(x => toMinutes(x.slot.start)));
+  let maxEnd = Math.max(...allSlots.map(x => toMinutes(x.slot.end)));
+  minStart = Math.min(minStart, 8 * 60 + 30);
+  maxEnd = Math.max(maxEnd, 16 * 60 + 30);
+  const startHour = Math.floor(minStart / 60);
+  const endHour = Math.ceil(maxEnd / 60);
+  const height = (endHour - startHour) * PX_PER_HOUR;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'timetable';
+  const title = document.createElement('div');
+  title.className = 'timetable-title';
+  title.textContent = t('Your week');
+  wrap.appendChild(title);
+
+  const grid = document.createElement('div');
+  grid.className = 'tt-grid';
+
+  const times = document.createElement('div');
+  times.className = 'tt-times';
+  times.style.height = height + 'px';
+  times.style.marginTop = '20px';
+  for (let h = startHour; h <= endHour; h++) {
+    const label = document.createElement('span');
+    label.className = 'tt-time-label';
+    label.style.top = ((h - startHour) * PX_PER_HOUR) + 'px';
+    label.textContent = `${h}:00`;
+    times.appendChild(label);
+  }
+  grid.appendChild(times);
+
+  for (let day = 0; day < 6; day++) {
+    const dayEl = document.createElement('div');
+    dayEl.className = 'tt-day';
+    const name = document.createElement('div');
+    name.className = 'tt-day-name';
+    name.textContent = DAY_NAMES[day];
+    dayEl.appendChild(name);
+
+    const col = document.createElement('div');
+    col.className = 'tt-day-col';
+    col.style.setProperty('--tt-height', height + 'px');
+    col.style.height = height + 'px';
+
+    const daySlots = allSlots
+      .filter(x => x.slot.weekday === day)
+      .sort((a, b) => toMinutes(a.slot.start) - toMinutes(b.slot.start));
+
+    daySlots.forEach((x, i) => {
+      const top = ((toMinutes(x.slot.start) - startHour * 60) / 60) * PX_PER_HOUR;
+      const blockHeight = Math.max(((toMinutes(x.slot.end) - toMinutes(x.slot.start)) / 60) * PX_PER_HOUR - 2, 20);
+      const block = document.createElement('div');
+      block.className = 'tt-block';
+      block.style.top = top + 'px';
+      block.style.height = blockHeight + 'px';
+      block.style.background = TT_COLORS[x.idx % TT_COLORS.length];
+      block.style.setProperty('--td', (0.3 + i * 0.08 + day * 0.05).toFixed(2) + 's');
+      // Overlap: if the previous block in this day overlaps, split widths.
+      const prev = daySlots[i - 1];
+      if (prev && toMinutes(prev.slot.end) > toMinutes(x.slot.start)) {
+        block.style.left = '50%';
+      }
+      block.draggable = true;
+      block.title = `${x.course.name} — drag off the grid (or double-click) to swap`;
+      const nameEl = document.createElement('div');
+      nameEl.className = 'tt-name';
+      nameEl.textContent = x.course.name;
+      const meta = document.createElement('div');
+      meta.className = 'tt-meta';
+      meta.textContent = `${x.slot.type} ${x.slot.start}-${x.slot.end}`;
+      block.appendChild(nameEl);
+      block.appendChild(meta);
+
+      block.addEventListener('dblclick', () => requestSwap(x.course.name));
+      block.addEventListener('dragstart', () => block.classList.add('dragging'));
+      block.addEventListener('dragend', (e) => {
+        block.classList.remove('dragging');
+        const rect = wrap.getBoundingClientRect();
+        const outside = e.clientX < rect.left - 20 || e.clientX > rect.right + 20 ||
+                        e.clientY < rect.top - 20 || e.clientY > rect.bottom + 20;
+        if (outside) requestSwap(x.course.name);
+      });
+      col.appendChild(block);
+    });
+
+    dayEl.appendChild(col);
+    grid.appendChild(dayEl);
+  }
+
+  wrap.appendChild(grid);
+  const hint = document.createElement('div');
+  hint.className = 'tt-hint';
+  hint.textContent = t('Drag a course off the grid (or double-click it) to ask for a swap');
+  wrap.appendChild(hint);
+  return wrap;
+}
+
+let lastPlanNames = {}; // course_number -> name from the previously rendered plan
+
+function renderPlanResult(planResult, priorPlan) {
+  const wrap = document.createElement('div');
+
+  // Revision diff: mark each course kept/added vs the plan the student had
+  // before this turn, and summarize what changed in a banner.
+  let removedNumbers = [];
+  if (priorPlan && priorPlan.length) {
+    const prior = new Set(priorPlan);
+    const current = new Set((planResult.courses || []).map(c => c.course_number));
+    for (const course of planResult.courses || []) {
+      course._diff = prior.has(course.course_number) ? 'kept' : 'added';
+    }
+    removedNumbers = priorPlan.filter(n => !current.has(n));
+  }
+
+  // Staggered reveal: each section slides in slightly after the previous
+  // one, so the plan "builds itself" in front of the student.
+  let revealIndex = 0;
+  function reveal(el, extraDelay) {
+    el.classList.add('reveal');
+    el.style.setProperty('--rd', ((revealIndex++) * 0.13 + (extraDelay || 0)).toFixed(2) + 's');
+    return el;
+  }
+
+  const v = planResult.verify || {};
+  const progress = planResult.progress || {};
+  const stats = document.createElement('div');
+  stats.className = 'plan-stats';
+  stats.innerHTML = `
+    <div class="stat ${v.pass ? 'pass' : 'fail'}">
+      <div class="stat-label">${t('Verified')}</div>
+      <div class="stat-value">${v.pass ? t('PASS') : t('NEEDS REVIEW')}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">${t('Credits')}</div>
+      <div class="stat-value" id="statCredits">—</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">${t('Workload')}</div>
+      <div class="stat-value" id="statWorkload">—</div>
+    </div>
+    <div class="stat ${progress.pace === 'on track' ? 'pass' : ''}">
+      <div class="stat-label">${t('Pace')}</div>
+      <div class="stat-value" style="text-transform:capitalize">${t(progress.pace) ?? '—'}</div>
+    </div>
+  `;
+  wrap.appendChild(reveal(stats));
+
+  if (priorPlan && priorPlan.length) {
+    const added = (planResult.courses || []).filter(c => c._diff === 'added');
+    if (added.length || removedNumbers.length) {
+      const banner = document.createElement('div');
+      banner.className = 'diff-banner';
+      const kept = (planResult.courses || []).length - added.length;
+      banner.append(`Revised: kept ${kept} course${kept === 1 ? '' : 's'}`);
+      if (removedNumbers.length) {
+        banner.append(' · removed ');
+        removedNumbers.forEach((n, i) => {
+          const s = document.createElement('span');
+          s.className = 'removed';
+          s.textContent = lastPlanNames[n] || n;
+          if (i) banner.append(', ');
+          banner.appendChild(s);
+        });
+      }
+      if (added.length) {
+        banner.append(' · added ');
+        added.forEach((c, i) => {
+          const s = document.createElement('span');
+          s.className = 'added';
+          s.textContent = c.name;
+          if (i) banner.append(', ');
+          banner.appendChild(s);
+        });
+      }
+      wrap.appendChild(reveal(banner));
+    }
+  }
+
+  if (!v.pass) {
+    const hint = document.createElement('div');
+    hint.className = 'plan-status-hint';
+    hint.textContent = '"NEEDS REVIEW" means the agent could not fully satisfy every constraint automatically - the specific reasons are listed below. Read them and reply with any adjustment, or confirm you\'re fine with the trade-off.';
+    wrap.appendChild(reveal(hint));
+  }
+
+  if (v.issues && v.issues.length) {
+    const issuesEl = document.createElement('div');
+    issuesEl.className = 'plan-issues';
+    const title = document.createElement('div');
+    title.className = 'plan-issues-title';
+    title.textContent = `${t('Open issues')} (${v.issues.length})`;
+    issuesEl.appendChild(title);
+    const list = document.createElement('ul');
+    const nameByNumber = {};
+    for (const course of planResult.courses || []) nameByNumber[course.course_number] = course.name;
+    for (const issue of v.issues) {
+      const li = document.createElement('li');
+      li.textContent = issue.course
+        ? `${nameByNumber[issue.course] || issue.course}: ${issue.reason}`
+        : issue.reason;
+      list.appendChild(li);
+    }
+    issuesEl.appendChild(list);
+    wrap.appendChild(reveal(issuesEl));
+  }
+
+  const courseGrid = document.createElement('div');
+  courseGrid.className = 'course-grid';
+  (planResult.courses || []).forEach((course, i) => {
+    const card = buildCourseCard(course);
+    card.classList.add('reveal');
+    card.style.setProperty('--rd', (revealIndex * 0.13 + i * 0.1).toFixed(2) + 's');
+    courseGrid.appendChild(card);
+  });
+  revealIndex += Math.min((planResult.courses || []).length, 4);
+  wrap.appendChild(courseGrid);
+
+  const timetable = buildWeeklyTimetable(planResult.courses || []);
+  if (timetable) wrap.appendChild(reveal(timetable));
+
+  const calendar = buildExamCalendar(planResult.courses || []);
+  if (calendar) wrap.appendChild(reveal(calendar));
+
+  const explanation = document.createElement('div');
+  explanation.className = 'plan-explanation';
+  richTextInto(explanation, planResult.explanation || '');
+  wrap.appendChild(reveal(explanation));
+
+  const feedbackPrompt = document.createElement('div');
+  feedbackPrompt.className = 'plan-feedback-prompt';
+  feedbackPrompt.textContent = v.pass
+    ? t('This plan is ready to go ✨ Anything you\'d like to change?')
+    : t('Anything you\'d like to change? Pick a quick action or reply below.');
+
+  // Quick-reply chips: one tap pre-fills the composer with a real request.
+  const chips = document.createElement('div');
+  chips.className = 'quick-chips';
+  const chipDefs = v.pass
+    ? [
+        ['Looks perfect ✓', 'Looks perfect, thank you!'],
+        ['Swap a course', 'I\'d like to swap out '],
+        ['Make it lighter', 'Please make the plan lighter - fewer credits.'],
+      ]
+    : [
+        ['Fix the open issues', 'Please fix the open issues listed above.'],
+        ['Swap a course', 'I\'d like to swap out '],
+        ['Make it lighter', 'Please make the plan lighter - fewer credits.'],
+        ['I\'m fine with the trade-off', 'I\'m fine with the trade-offs as they are, thanks!'],
+      ];
+  for (const [label, fill] of chipDefs) {
+    const chip = document.createElement('button');
+    chip.className = 'quick-chip';
+    chip.textContent = t(label);
+    chip.addEventListener('click', () => {
+      tick();
+      inputEl.value = fill;
+      inputEl.focus();
+      inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+    });
+    chips.appendChild(chip);
+  }
+  feedbackPrompt.appendChild(chips);
+
+  // Take-it-with-you toolbar: calendar export, print, share image.
+  const toolbar = document.createElement('div');
+  toolbar.className = 'quick-chips plan-toolbar';
+  const tools = [
+    ['📅 ' + t('Add to calendar'), () => downloadIcs(planResult)],
+    ['🖨 ' + t('Print'), () => window.print()],
+    ['📤 ' + t('Share image'), () => downloadPlanImage(planResult)],
+  ];
+  for (const [label, fn] of tools) {
+    const b = document.createElement('button');
+    b.className = 'quick-chip';
+    b.textContent = label;
+    b.addEventListener('click', () => { tick(); fn(); });
+    toolbar.appendChild(b);
+  }
+  feedbackPrompt.appendChild(toolbar);
+  wrap.appendChild(reveal(feedbackPrompt, 0.2));
+
+  addCard('plan-panel', t('Your Plan'), wrap);
+
+  // Count-up stats, timed to land as their tile reveals.
+  const creditsEl = stats.querySelector('#statCredits');
+  const workloadEl = stats.querySelector('#statWorkload');
+  if (v.total_credits != null) animateNumber(creditsEl, v.total_credits, 1);
+  if (v.workload_score != null) animateNumber(workloadEl, v.workload_score, 1, '/100');
+
+  // Celebrate a fully verified plan - happy path only.
+  if (v.pass) {
+    setTimeout(() => {
+      celebrate();
+      chime();
+      const passTile = stats.querySelector('.stat.pass');
+      if (passTile) passTile.classList.add('celebrate');
+    }, 500);
+  }
+
+  // Remember this plan's names so a future revision can name what it
+  // removed (removed courses aren't in the new payload).
+  lastPlanNames = {};
+  for (const course of planResult.courses || []) lastPlanNames[course.course_number] = course.name;
+
+  // Once a plan exists, the composer is for refining it - swap the intake
+  // placeholder for a feedback-oriented one so it never reads "any changes
+  // or final remarks" before there's anything to change.
+  inputEl.placeholder = v.pass
+    ? (heMode ? t('placeholder_pass') : 'Any changes or final remarks? (e.g. "swap the Tuesday course", "I have an exam conflict on 23.2")')
+    : (heMode ? t('placeholder_fail') : 'Reply with an adjustment and I\'ll revise — e.g. "drop the course with unmet prerequisites".');
+
+  saveSession(planResult);
+}
+
+// Friendly labels for the agent's real tool steps, streamed live into the
+// working card - students watch the agent actually think, not canned text.
+const STEP_LABELS = {
+  extract_student_state: 'Reading your message…',
+  structured_intake: 'Reading your answers…',
+  merge_known_state: 'Recalling what I already know…',
+  assess_progress: 'Checking your progress vs. a typical student…',
+  fetch_catalog: 'Auditing your degree requirements…',
+  query_prereq_graph: 'Mapping prerequisite chains…',
+  fetch_exam_dates: 'Pulling exam dates…',
+  summarize_cheesefork: 'Reading student reviews…',
+  simulate_future_impact: 'Projecting future semesters…',
+  roadmap_to_graduation: 'Charting your road to graduation…',
+  risk_report: 'Stress-testing the plan…',
+  verify_plan: 'Verifying against every constraint…',
+  compare_plans: 'Comparing alternatives…',
+  check_invariants: 'Running safety checks…',
+  search_courses: 'Looking up courses…',
+  requested_removals: 'Noting the course you asked to swap…',
+  verify_before_deliver_nudge: 'Insisting on a verification first…',
+  underload_pushback: 'Not enough credits — pushing for more…',
+  sport_padding_pushback: 'Rejecting filler courses…',
+  persistent_issue_pushback: 'That issue must be fixed — trying again…',
+  removal_ignored_pushback: 'Enforcing your swap request…',
+  deliver_now_nudge: 'Wrapping up…',
+  answer_course_question: 'Reading the reviews to answer you…',
+  deliver_plan: 'Finalizing your plan…',
+};
+
+async function postChat(body) {
+  // Prefer the streaming endpoint (live agent steps); fall back to the
+  // plain one if streaming fails for any reason.
+  try {
+    return await postChatStream(body);
+  } catch (streamErr) {
+    console.warn('stream failed, falling back to /chat:', streamErr);
+  }
+  const response = await fetch(`${backendUrlEl.value}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.json().catch(() => null);
+    throw new Error(errBody?.error || `Backend returned ${response.status}`);
+  }
+  await handleChatData(await response.json());
+}
+
+async function postChatStream(body) {
+  const response = await fetch(`${backendUrlEl.value}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok || !response.body) throw new Error(`stream returned ${response.status}`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalData = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let event;
+      try { event = JSON.parse(line); } catch { continue; }
+      if (event.type === 'step') {
+        setWorkingStep(STEP_LABELS[event.name] || null);
+      } else if (event.type === 'result') {
+        finalData = event.data;
+      } else if (event.type === 'error') {
+        throw new Error(event.error);
+      }
+    }
+  }
+  if (!finalData) throw new Error('stream ended without a result');
+  await handleChatData(finalData);
+}
+
+async function handleChatData(data) {
+  messages = data.messages;
+  costUsd = data.cost_usd;
+  // What the student had BEFORE this turn - captured before overwrite, so
+  // a revised plan can show what changed relative to it.
+  const priorPlan = (knownContext && knownContext.previous_plan) || null;
+  if (data.known_context) knownContext = data.known_context;
+  budgetEl.textContent = `session cost: $${costUsd.toFixed(4)}`;
+
+  if (data.needs_input) {
+    // The agent already spoke its short intro line (queued into messages
+    // server-side); show that as a normal chat bubble, then reveal only
+    // the button widgets for whatever it still couldn't infer.
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'assistant' && last.content) {
+      addAssistantMessage(last.content);
+    }
+    await renderGapFillPanel(data.needs_input);
+    return;
+  }
+
+  document.getElementById('gapFillPanel').style.display = 'none';
+  document.getElementById('composer').style.display = 'flex';
+
+  if (data.plan_result) {
+    renderPlanResult(data.plan_result, priorPlan);
+  } else {
+    const last = messages[messages.length - 1];
+    if (last && last.role === 'assistant' && last.content) {
+      addAssistantMessage(last.content);
+    }
+    saveSession(null);
+  }
+}
+
+async function send() {
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  inputEl.value = '';
+  sendBtn.disabled = true;
+
+  addStudentMessage(text);
+  messages.push({ role: 'user', content: text });
+  showAgentWorking();
+
+  try {
+    await postChat({ track_id: selectedTrackId, messages, cost_usd: costUsd, known_context: knownContext });
+  } catch (err) {
+    addSystemNote(`Error talking to the backend: ${err.message}. Is it running at ${backendUrlEl.value}?`);
+  } finally {
+    hideAgentWorking();
+    sendBtn.disabled = false;
+  }
+}
+
+sendBtn.addEventListener('click', send);
+inputEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+
+// --- Track selection, then structured intake form ---
+// A checklist against a known, fixed course list removes the least
+// reliable part of the whole pipeline (an LLM guessing course names/numbers
+// from typed text) for the one question that's really just a fixed choice.
+// The checklist itself only shows courses a student at this semester should
+// already have finished (same depth<=semester-2 cutoff assess_progress
+// uses) - defaulted to "Passed", so the interaction is just "flag the
+// exceptions" rather than reviewing every course in the degree.
+
+let selectedTrackId = null;
+let intakeOptions = null;
+let intakeOptionsPromise = null;
+let knownState = {}; // backend's partial state, from the last needs_input response
+let selectedSemester = 4;
+let selectedWeekdays = new Set();
+let selectedPace = 'normal';
+let courseStatus = {}; // course_number -> 'passed' | 'failed'
+let touchedCourses = new Set(); // courses the student manually overrode
+
+async function loadTracks() {
+  const el = document.getElementById('trackToggle');
+  try {
+    const response = await fetch(`${backendUrlEl.value}/tracks`);
+    const tracks = await response.json();
+    el.innerHTML = '';
+    for (const track of tracks) {
+      const btn = document.createElement('button');
+      btn.className = 'toggle-btn';
+      btn.textContent = track.name;
+      btn.addEventListener('click', () => selectTrack(track));
+      el.appendChild(btn);
+    }
+  } catch (err) {
+    el.textContent = `Couldn't load tracks from the backend: ${err.message}`;
+  }
+}
+
+function showWelcome() {
+  const el = document.createElement('div');
+  el.className = 'card welcome';
+  const welcomeP = heMode ? t('welcome_p')
+    : "Tell me where you are and I'll build a semester plan for you — balancing your required retakes, exam spacing, workload, and the days you're free. Just talk naturally below; I'll only ask follow-up questions if something's genuinely missing.";
+  el.innerHTML = `
+    <h2>${t("Let's plan your next semester 👋")}</h2>
+    <p>${welcomeP}</p>
+    <div class="steps">
+      <span class="step"><b>1</b> ${t('You describe your situation')}</span>
+      <span class="step"><b>2</b> ${t('I plan & check it against every constraint').replace('&', '&amp;')}</span>
+      <span class="step"><b>3</b> ${t('You review & refine').replace('&', '&amp;')}</span>
+    </div>`;
+  logEl.appendChild(el);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function selectTrack(track) {
+  selectedTrackId = track.track_id;
+  document.getElementById('headerTrack').textContent = track.name;
+  document.getElementById('trackSelectForm').style.display = 'none';
+  document.getElementById('composer').style.display = 'flex';
+  showWelcome();
+  inputEl.focus();
+  // Fetch in the background so button widgets are ready by the time the
+  // agent identifies a real gap, without blocking the student from typing
+  // their first message right away.
+  intakeOptionsPromise = loadIntakeOptionsBackground();
+}
+
+function renderSemesterToggle() {
+  const el = document.getElementById('semesterToggle');
+  el.innerHTML = '';
+  for (let s = 1; s <= 8; s++) {
+    const btn = document.createElement('button');
+    btn.className = `toggle-btn${s === selectedSemester ? ' active' : ''}`;
+    btn.textContent = s;
+    btn.addEventListener('click', () => {
+      selectedSemester = s;
+      renderSemesterToggle();
+      renderCourseChecklist();
+    });
+    el.appendChild(btn);
+  }
+}
+
+function renderWeekdayToggle() {
+  const el = document.getElementById('weekdayToggle');
+  el.innerHTML = '';
+  intakeOptions.weekdays.forEach((name, idx) => {
+    const btn = document.createElement('button');
+    btn.className = `toggle-btn${selectedWeekdays.has(idx) ? ' active danger' : ''}`;
+    btn.textContent = name;
+    btn.addEventListener('click', () => {
+      if (selectedWeekdays.has(idx)) selectedWeekdays.delete(idx);
+      else selectedWeekdays.add(idx);
+      renderWeekdayToggle();
+    });
+    el.appendChild(btn);
+  });
+}
+
+function renderPaceToggle() {
+  const el = document.getElementById('paceToggle');
+  el.innerHTML = '';
+  intakeOptions.pace_options.forEach((pace) => {
+    const btn = document.createElement('button');
+    btn.className = `toggle-btn${pace === selectedPace ? ' active' : ''}`;
+    btn.textContent = pace;
+    btn.addEventListener('click', () => {
+      selectedPace = pace;
+      renderPaceToggle();
+    });
+    el.appendChild(btn);
+  });
+}
+
+function renderCourseChecklist() {
+  const el = document.getElementById('courseChecklist');
+  el.innerHTML = '';
+
+  // Only show courses expected done by now (depth <= semester-2, the same
+  // cutoff assess_progress uses) - a student isn't asked about courses they
+  // haven't reached yet at all, only to flag exceptions among ones they
+  // should already have finished.
+  const expectedByNow = intakeOptions.mandatory_courses.filter((c) => c.depth <= selectedSemester - 2);
+
+  if (expectedByNow.length === 0) {
+    el.textContent = "No required courses are expected done yet at this semester - you're all caught up by default.";
+    return;
+  }
+
+  for (const course of expectedByNow) {
+    if (!touchedCourses.has(course.course_number)) {
+      courseStatus[course.course_number] = 'passed';
+    }
+
+    const row = document.createElement('div');
+    row.className = 'course-row';
+
+    const name = document.createElement('div');
+    name.className = 'course-row-name';
+    name.textContent = course.name;
+    row.appendChild(name);
+
+    const toggles = document.createElement('div');
+    toggles.className = 'course-row-toggles';
+    for (const [value, label] of [['passed', 'Passed'], ['failed', 'Failed']]) {
+      const btn = document.createElement('button');
+      const isActive = courseStatus[course.course_number] === value;
+      btn.className = `toggle-btn${isActive ? (value === 'failed' ? ' active danger' : ' active') : ''}`;
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        courseStatus[course.course_number] = value;
+        touchedCourses.add(course.course_number);
+        renderCourseChecklist();
+      });
+      toggles.appendChild(btn);
+    }
+    row.appendChild(toggles);
+    el.appendChild(row);
+  }
+}
+
+async function loadIntakeOptionsBackground() {
+  try {
+    const response = await fetch(`${backendUrlEl.value}/intake-options?track_id=${encodeURIComponent(selectedTrackId)}`);
+    intakeOptions = await response.json();
+  } catch (err) {
+    intakeOptions = null;
+    console.error("Couldn't load intake options:", err);
+  }
+}
+
+// Called whenever a /chat response comes back with a non-null needs_input:
+// shows only the gap sections the agent couldn't infer from free text,
+// pre-seeded with whatever it already extracted so the student never has
+// to re-answer something they already said.
+async function renderGapFillPanel(needsInput) {
+  knownState = needsInput || {};
+  const missing = new Set(knownState.missing_fields || []);
+
+  document.getElementById('composer').style.display = 'none';
+
+  if (missing.size && !intakeOptions) {
+    await intakeOptionsPromise;
+  }
+
+  selectedSemester = knownState.semester_number || selectedSemester || 4;
+  selectedWeekdays = new Set((knownState.constraints && knownState.constraints.excluded_weekdays) || []);
+  selectedPace = (knownState.constraints && knownState.constraints.pace) || 'normal';
+  touchedCourses = new Set();
+  courseStatus = {};
+  for (const c of knownState.passed_courses || []) courseStatus[c] = 'passed';
+  for (const c of knownState.failed_courses || []) courseStatus[c] = 'failed';
+
+  document.getElementById('gapSemesterSection').style.display = missing.has('semester_number') ? 'block' : 'none';
+  document.getElementById('gapWeekdaySection').style.display = missing.has('weekdays') ? 'block' : 'none';
+  document.getElementById('gapPaceSection').style.display = missing.has('pace') ? 'block' : 'none';
+  document.getElementById('gapCoursesSection').style.display = missing.has('courses') ? 'block' : 'none';
+
+  if (missing.has('semester_number')) renderSemesterToggle();
+  if (missing.has('weekdays')) renderWeekdayToggle();
+  if (missing.has('pace')) renderPaceToggle();
+  if (missing.has('courses')) renderCourseChecklist();
+
+  document.getElementById('gapFillPanel').style.display = 'block';
+}
+
+document.getElementById('gapSubmit').addEventListener('click', async () => {
+  const submitBtn = document.getElementById('gapSubmit');
+  submitBtn.disabled = true;
+
+  const missing = new Set(knownState.missing_fields || []);
+  const knownConstraints = knownState.constraints || {};
+  const intake = {
+    semester_number: missing.has('semester_number') ? selectedSemester : knownState.semester_number,
+    excluded_weekdays: missing.has('weekdays') ? Array.from(selectedWeekdays) : (knownConstraints.excluded_weekdays || []),
+    pace: missing.has('pace') ? selectedPace : (knownConstraints.pace || 'normal'),
+    passed_courses: missing.has('courses')
+      ? Object.entries(courseStatus).filter(([, v]) => v === 'passed').map(([c]) => c)
+      : (knownState.passed_courses || []),
+    failed_courses: missing.has('courses')
+      ? Object.entries(courseStatus).filter(([, v]) => v === 'failed').map(([c]) => c)
+      : (knownState.failed_courses || []),
+    override_minimums: knownConstraints.override_minimums || false,
+  };
+
+  document.getElementById('gapFillPanel').style.display = 'none';
+  showAgentWorking();
+  try {
+    await postChat({ track_id: selectedTrackId, messages, cost_usd: costUsd, intake, known_context: knownContext });
+  } catch (err) {
+    addSystemNote(`Error talking to the backend: ${err.message}. Is it running at ${backendUrlEl.value}?`);
+  } finally {
+    hideAgentWorking();
+    submitBtn.disabled = false;
+  }
+});
+
+// ===== Boot =====
+function applyStaticHebrew() {
+  if (!heMode) return;
+  document.getElementById('headerTrack').textContent = t('Pick your track to begin');
+  const trackLabel = document.querySelector('#trackSelectForm .role-label');
+  if (trackLabel) trackLabel.textContent = t('Which track are you in?');
+  sendBtn.textContent = t('Send');
+  document.getElementById('gapSubmit').textContent = t('Continue');
+  inputEl.placeholder = t('placeholder_intake');
+}
+
+function injectHeaderToggles() {
+  const header = document.querySelector('header');
+  const lang = document.createElement('button');
+  lang.className = 'hdr-toggle';
+  lang.textContent = heMode ? 'EN' : 'עברית';
+  lang.title = 'Switch language';
+  lang.addEventListener('click', () => {
+    localStorage.setItem('planner_lang', heMode ? 'en' : 'he');
+    location.reload();
+  });
+  const snd = document.createElement('button');
+  snd.className = 'hdr-toggle';
+  snd.textContent = soundOn ? '🔈' : '🔇';
+  snd.title = 'Toggle sounds';
+  snd.addEventListener('click', () => {
+    soundOn = !soundOn;
+    localStorage.setItem('planner_sound', soundOn ? 'on' : 'off');
+    snd.textContent = soundOn ? '🔈' : '🔇';
+    if (soundOn) tick();
+  });
+  const budget = header.querySelector('.budget');
+  header.insertBefore(lang, budget);
+  header.insertBefore(snd, budget);
+}
+
+function offerRestore(saved) {
+  const el = document.createElement('div');
+  el.className = 'card welcome welcome-back';
+  const h = document.createElement('h2');
+  h.textContent = t('Welcome back!') + ' 👋';
+  const p = document.createElement('p');
+  p.textContent = saved.trackName || '';
+  const chips = document.createElement('div');
+  chips.className = 'quick-chips';
+  const cont = document.createElement('button');
+  cont.className = 'quick-chip';
+  cont.textContent = t('Continue where you left off');
+  cont.addEventListener('click', () => {
+    tick();
+    el.remove();
+    selectedTrackId = saved.trackId;
+    messages = saved.messages || [];
+    costUsd = saved.costUsd || 0;
+    knownContext = saved.knownContext || null;
+    document.getElementById('headerTrack').textContent = saved.trackName || '';
+    document.getElementById('trackSelectForm').style.display = 'none';
+    document.getElementById('composer').style.display = 'flex';
+    budgetEl.textContent = `session cost: $${costUsd.toFixed(4)}`;
+    intakeOptionsPromise = loadIntakeOptionsBackground();
+    if (saved.lastPlanResult) renderPlanResult(saved.lastPlanResult);
+    inputEl.focus();
+  });
+  const fresh = document.createElement('button');
+  fresh.className = 'quick-chip';
+  fresh.textContent = t('Start fresh');
+  fresh.addEventListener('click', () => {
+    tick();
+    localStorage.removeItem('planner_session');
+    el.remove();
+  });
+  chips.appendChild(cont);
+  chips.appendChild(fresh);
+  el.appendChild(h);
+  el.appendChild(p);
+  el.appendChild(chips);
+  logEl.appendChild(el);
+}
+
+applyStaticHebrew();
+injectHeaderToggles();
+loadTracks();
+const savedSession = loadSession();
+if (savedSession && savedSession.trackId && (savedSession.messages || []).length) {
+  offerRestore(savedSession);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+"""Loads every pre-fetched track data bundle once at process start.
+
+No live Technion/CheeseFork calls happen here or anywhere in the agent
+backend - all of that ran ahead of time in pipeline/fetch_track_bundle.py.
+Keeping the agent purely a reader of static data keeps every tool call fast
+and free, which matters given the tight LLM budget this backend runs under.
+
+Each track's data (courses, requirement tree, and the derived structures
+that used to be single-track module globals - the mandatory course set and
+inferred prerequisite depths) lives on its own Track object. Callers pass
+the specific Track for a student's selected track explicitly through the
+whole call chain, rather than mutating shared global state to point at
+"the active track" - the latter would silently corrupt concurrent requests
+for different students in different tracks.
+"""
+
+import json
+from pathlib import Path
+
+from prereq_parser import collect_prereq_courses
+
+_DATA_DIR = Path(__file__).parent.parent / "data"
+_MANDATORY_CATEGORY_NAMES = {"מקצועות חובה", "Mandatory", "Mandatory option"}
+
+
+def _leaf_courses(node: dict) -> list[str]:
+    if "course" in node:
+        return [node["course"]]
+    result = []
+    for child in node.get("children", []):
+        result.extend(_leaf_courses(child))
+    return result
+
+
+def _bottom_categories(node: dict) -> list[dict]:
+    """Finds the shallowest nodes whose direct children are all course
+    leaves - the real reportable categories. See tools.fetch_catalog for
+    why this walk (rather than a fixed depth) is needed."""
+    children = node.get("children")
+    if children is None:
+        return []
+    if all("course" in child for child in children):
+        return [node]
+
+    result = []
+    direct_leaves = [child for child in children if "course" in child]
+    if direct_leaves:
+        result.append({"name": node["name"], "children": direct_leaves})
+    for child in children:
+        if "course" not in child:
+            result.extend(_bottom_categories(child))
+    return result
+
+
+class Track:
+    """One degree track's full static dataset, plus derived structures
+    computed once when the track loads rather than per-request."""
+
+    def __init__(self, bundle: dict):
+        self.otjid: str = bundle["track"]["otjid"]
+        self.name: str = bundle["track"]["name"]
+        self.faculty: str = bundle["track"]["faculty"]
+        self.target_semester: str = bundle["target_semester"]
+        self.courses: dict = bundle["courses"]
+        self.requirement_tree: dict = bundle["requirement_tree"]
+        self.reverse_prereqs: dict = bundle["reverse_prereqs"]
+
+        self.mandatory_course_numbers: set[str] = {
+            c
+            for category in _bottom_categories(self.requirement_tree)
+            if category["name"] in _MANDATORY_CATEGORY_NAMES
+            for c in _leaf_courses(category)
+        }
+        self.mandatory_prereq_depths: dict[str, int] = self._compute_mandatory_prereq_depths()
+
+    def _compute_mandatory_prereq_depths(self) -> dict[str, int]:
+        """Technion's own data has no "recommended semester" field for any
+        course (confirmed: every leaf's Vpriox/Cgcat field is blank) - this
+        infers a rough ordering instead, from how deep each mandatory course
+        sits in the *intra-mandatory* prerequisite chain. depth 0 = no
+        mandatory prerequisites; depth N = requires a depth-(N-1) mandatory
+        course first. A heuristic approximation, not ground truth."""
+        depths: dict[str, int] = {}
+
+        def depth(course_number: str, stack: frozenset = frozenset()) -> int:
+            if course_number in depths:
+                return depths[course_number]
+            if course_number in stack:
+                return 0  # defensive: a cycle would be a data error, not a real case
+            course = self.courses.get(course_number)
+            if course is None:
+                return 0
+            mandatory_prereqs = [
+                p
+                for p in collect_prereq_courses(course["prerequisites"])
+                if p in self.mandatory_course_numbers
+            ]
+            result = (
+                0
+                if not mandatory_prereqs
+                else 1 + max(depth(p, stack | {course_number}) for p in mandatory_prereqs)
+            )
+            depths[course_number] = result
+            return result
+
+        for c in self.mandatory_course_numbers:
+            depth(c)
+        return depths
+
+
+def _load_all_tracks() -> dict[str, Track]:
+    tracks = {}
+    for path in sorted(_DATA_DIR.glob("track_*.json")):
+        bundle = json.loads(path.read_text(encoding="utf-8"))
+        track = Track(bundle)
+        tracks[track.otjid] = track
+    return tracks
+
+
+TRACKS: dict[str, Track] = _load_all_tracks()
+
+
+def get_track(track_id: str) -> Track:
+    track = TRACKS.get(track_id)
+    if track is None:
+        raise ValueError(f"Unknown track_id {track_id!r}. Available: {sorted(TRACKS)}")
+    return track
+
+
+def list_tracks() -> list[dict]:
+    """Only tracks where a flat mandatory-course list was actually detected -
+    some tracks (confirmed: Industrial Engineering & Management) are built
+    around specialization "chains" instead of one universal required list,
+    which this data model doesn't represent yet. Excluding those here (by
+    the structural signal, not a hardcoded track ID) means a future track
+    with the same mismatch is silently skipped rather than silently broken -
+    it just won't appear as a plannable option until that structure is
+    explicitly supported."""
+    return [
+        {"track_id": t.otjid, "name": t.name, "faculty": t.faculty}
+        for t in TRACKS.values()
+        if t.mandatory_course_numbers
+    ]
