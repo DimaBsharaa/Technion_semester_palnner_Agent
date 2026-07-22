@@ -54,6 +54,7 @@ from agent_loop import (
     answer_course_question,
     backfill_passed_courses,
     merge_known_state,
+    record_llm_step,
     resolve_verify_kwargs,
 )
 from data_bundle import Track, get_track
@@ -75,7 +76,19 @@ def _call_with_tools(messages: list[dict]) -> tuple[object, float]:
     cost = (usage.prompt_tokens / 1_000_000) * PRICE_INPUT_PER_1M + (
         usage.completion_tokens / 1_000_000
     ) * PRICE_OUTPUT_PER_1M
-    return response.choices[0].message, cost
+    message = response.choices[0].message
+    record_llm_step(
+        "PlanningLoop",
+        messages,
+        {
+            "text": message.content,
+            "tool_calls": [
+                {"tool": tc.function.name, "arguments": tc.function.arguments}
+                for tc in (message.tool_calls or [])
+            ],
+        },
+    )
+    return message, cost
 
 
 def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: list[int] | None = None) -> str:

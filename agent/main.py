@@ -41,16 +41,27 @@ import json
 import os
 import queue
 import threading
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import tools
-from agent_loop import build_state_from_intake, run_agent_turn, summarize_intake_as_message
+from agent_loop import (
+    build_state_from_intake,
+    get_llm_trace,
+    run_agent_turn,
+    start_llm_trace,
+    summarize_intake_as_message,
+)
 from agent_react_loop import run_agent_turn_v2
 from data_bundle import get_track, list_tracks
+
+_HERE = Path(__file__).parent
+SITE_INDEX = _HERE.parent / "site" / "index.html"
+ARCH_PNG = _HERE / "static" / "architecture.png"
 
 # Bump this string on every architecturally-significant change, so a stale
 # running process is immediately obvious from GET /health instead of being
@@ -131,13 +142,16 @@ def chat(request: ChatRequest):
         )
 
     try:
-        return implementation(
+        start_llm_trace()
+        result = implementation(
             request.track_id,
             messages,
             request.cost_usd,
             state_override=state_override,
             known_context=request.known_context,
         )
+        result["llm_steps"] = get_llm_trace()
+        return result
     except Exception as e:
         # TEMPORARY: surface the real error for local debugging. Remove
         # before this is ever reachable from outside localhost - a
@@ -172,6 +186,7 @@ def chat_stream(request: ChatRequest):
 
     def worker():
         try:
+            start_llm_trace()  # thread-local: must start inside the worker
             result = run_agent_turn_v2(
                 request.track_id,
                 messages,
@@ -180,6 +195,7 @@ def chat_stream(request: ChatRequest):
                 known_context=request.known_context,
                 on_event=on_event,
             )
+            result["llm_steps"] = get_llm_trace()
             events.put({"type": "result", "data": result})
         except Exception as e:
             events.put({"type": "error", "error": str(e)})
@@ -200,3 +216,132 @@ def chat_stream(request: ChatRequest):
 @app.get("/health")
 def health():
     return {"status": "ok", "version": AGENT_VERSION, "agent_mode_default": AGENT_MODE_DEFAULT}
+
+
+# ===================== Course-spec required endpoints =====================
+
+@app.get("/")
+def root_gui():
+    """The GUI, served at the root URL as the course spec requires."""
+    return FileResponse(SITE_INDEX, media_type="text/html")
+
+
+@app.get("/api/team_info")
+def team_info():
+    return {
+        "group_batch_order_number": os.environ.get("GROUP_BATCH_ORDER", "TODO_batch_order"),
+        "team_name": os.environ.get("TEAM_NAME", "Semester Planning Agent"),
+        "students": [
+            {"name": "Manhal Ghoummaid", "email": "manhal@campus.technion.ac.il"},
+            {"name": "Diyar Husayyan", "email": "diyarh@campus.technion.ac.il"},
+            {"name": "Dima Bshara", "email": "dima.bshara@campus.technion.ac.il"},
+        ],
+    }
+
+
+@app.get("/api/agent_info")
+def agent_info():
+    """Static agent metadata; the worked example (with its real captured
+    steps) lives in static/agent_info_example.json, generated from an
+    actual /api/execute run."""
+    example_path = _HERE / "static" / "agent_info_example.json"
+    examples = []
+    if example_path.exists():
+        examples = json.loads(example_path.read_text(encoding="utf-8"))
+    return {
+        "description": (
+            "An academic-advisor agent that plans a Technion student's next semester. "
+            "The student describes their situation in free text (Hebrew or English) - semester number, "
+            "courses passed or failed, days they cannot attend, preferred pace - and the agent builds a "
+            "complete, verified semester plan: courses with per-course reasoning, a clash-free weekly "
+            "timetable, an exam calendar (moed A+B), risk analysis, and a roadmap to graduation.\n\n"
+            "What it CAN do: plan a semester for the supported Technion tracks (Data & Information "
+            "Engineering by default; Information Systems Engineering on request); prioritize retakes of "
+            "blocking courses; respect excluded weekdays with section-level precision; balance credits, "
+            "workload and exam spacing; answer course questions grounded in real student reviews; and "
+            "revise an existing plan minimally on follow-up ('swap course X', 'I have a wedding on an "
+            "exam date').\n\n"
+            "What it CANNOT do (constraints): it does not register the student to courses or access any "
+            "personal Technion account (it works from the public catalog only); it never delivers a plan "
+            "containing a schedule collision, an already-passed course, or a course whose prerequisites "
+            "are unmet; it caps sport-course filler at one; and when constraints make a full plan "
+            "impossible it says so honestly instead of hiding the problem."
+        ),
+        "purpose": (
+            "Give every Technion student the quality of semester planning an experienced human academic "
+            "advisor provides - retake priority, exam-spacing awareness, workload balance, honest "
+            "trade-offs - in seconds instead of a scarce office-hours appointment."
+        ),
+        "prompt_template": {
+            "template": (
+                "Semester: <number you are starting, e.g. 5>\n"
+                "Passed: <'everything expected so far' or list what you passed>\n"
+                "Failed / still need: <courses you failed or must retake, by name>\n"
+                "Days you cannot attend: <e.g. Sunday, or 'none'>\n"
+                "Pace: <light | normal | fast>\n"
+                "Anything else: <optional - e.g. 'make sure course X is included', "
+                "'I want the safest plan', a question about a course>"
+            )
+        },
+        "prompt_examples": examples,
+    }
+
+
+@app.get("/api/model_architecture")
+def model_architecture():
+    return FileResponse(ARCH_PNG, media_type="image/png")
+
+
+class ExecuteRequest(BaseModel):
+    prompt: str
+
+
+def _plan_to_text(result: dict) -> str:
+    """Flatten a turn result into the single response string the course
+    spec requires."""
+    pr = result.get("plan_result")
+    if result.get("needs_input"):
+        missing = ", ".join(result["needs_input"].get("missing_fields", []))
+        last = (result.get("messages") or [{}])[-1].get("content") or ""
+        return f"{last} (Missing to proceed: {missing}. Please include these details in your prompt.)"
+    if not pr:
+        last = (result.get("messages") or [{}])[-1].get("content") or ""
+        return last
+    lines = [f"Semester plan for {pr['track_name']} - {pr['target_semester']}:"]
+    for c in pr["courses"]:
+        tag = " [RETAKE]" if c.get("is_retake") else ""
+        why = f" - {c['why']}" if c.get("why") else ""
+        lines.append(f"- {c['course_number']} {c['name']} ({c['points']} pts){tag}{why}")
+    v = pr["verify"]
+    lines.append(f"Total: {v['total_credits']} credits | verified: {'PASS' if v['pass'] else 'NEEDS REVIEW'}")
+    if v.get("issues"):
+        lines.append("Open issues: " + "; ".join(i["reason"] for i in v["issues"]))
+    lines.append("")
+    lines.append(pr.get("explanation") or "")
+    return "\n".join(lines)
+
+
+@app.post("/api/execute")
+def execute(request: ExecuteRequest):
+    """Course-spec main entry point: single prompt in, response + full
+    LLM-call steps trace out. Stateless single shot; the rich session UI
+    uses /chat/stream, but both run the same agent."""
+    start_llm_trace()
+    try:
+        prompt = (request.prompt or "").strip()
+        if not prompt:
+            return {"status": "error", "error": "Empty prompt.", "response": None, "steps": []}
+        # Optional track switch: mention Information Systems to use that track.
+        track_id = "SC00001453"
+        low = prompt.lower()
+        if "information systems" in low or "מערכות מידע" in prompt:
+            track_id = "SC00001416"
+        result = run_agent_turn_v2(track_id, [{"role": "user", "content": prompt}], 0.0)
+        return {
+            "status": "ok",
+            "error": None,
+            "response": _plan_to_text(result),
+            "steps": get_llm_trace(),
+        }
+    except Exception as e:
+        return {"status": "error", "error": f"{type(e).__name__}: {e}", "response": None, "steps": get_llm_trace()}

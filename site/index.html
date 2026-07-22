@@ -112,6 +112,15 @@
   .msg-tool.pass { border-color: var(--grn); }
   .msg-tool.fail { border-color: var(--red); }
   .msg-system-note { align-self: center; font-size: .8rem; color: var(--mut); font-style: italic; }
+  .steps-trace { align-self: stretch; margin: 2px 6px; font-size: .78rem; color: var(--mut);
+    background: rgba(120,130,160,.06); border: 1px dashed rgba(120,130,160,.35); border-radius: 10px; padding: 6px 10px; }
+  .steps-trace > summary { cursor: pointer; user-select: none; font-weight: 600; }
+  .steps-trace-step { margin: 8px 0 8px 8px; padding-left: 10px; border-left: 2px solid rgba(120,130,160,.35); }
+  .steps-trace-head { font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+  .steps-trace-step details { margin: 2px 0; }
+  .steps-trace-step summary { cursor: pointer; user-select: none; }
+  .steps-trace-step pre { white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow-y: auto;
+    background: rgba(20,25,40,.05); border-radius: 8px; padding: 8px; margin: 4px 0; font-size: .72rem; direction: ltr; text-align: left; }
 
   /* --- Plan result panel --- */
   .plan-panel { align-self: stretch; width: 100%; }
@@ -634,6 +643,16 @@ const budgetEl = document.getElementById('budget');
 const backendUrlEl = document.getElementById('backendUrl');
 const statusNoteEl = document.getElementById('statusNote');
 
+// When this page is served by the backend itself (root route / Vercel), talk to
+// the same origin; the hardcoded localhost default is only for file:// or a
+// separate static dev server (e.g. :4173).
+(function () {
+  const isStaticDev = location.protocol === 'file:' || ['4173', '5500', '5173', '8000'].includes(location.port);
+  if (!isStaticDev && (location.protocol === 'http:' || location.protocol === 'https:')) {
+    backendUrlEl.value = location.origin;
+  }
+})();
+
 // ===== Ambient animated background =====
 function buildBgScene() {
   const glyphs = ['π', '∑', '√', '∫', 'ƒ', 'λ', '≠', '±', '\u{1F4D6}', '\u{1F4D0}', '✏️', '\u{1F393}', '\u{1F4C5}', '⊕'];
@@ -954,6 +973,42 @@ function addSystemNote(text) {
   div.className = 'msg-system-note';
   div.textContent = text;
   logEl.appendChild(div);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Collapsible per-turn trace of every LLM call the agent made this turn
+// (module + exact prompts + response) - the course-spec "steps" view.
+function renderStepsTrace(steps) {
+  if (!steps || !steps.length) return;
+  const details = document.createElement('details');
+  details.className = 'steps-trace';
+  const summary = document.createElement('summary');
+  summary.textContent = `🔍 Under the hood: ${steps.length} LLM call${steps.length > 1 ? 's' : ''} this turn`;
+  details.appendChild(summary);
+  steps.forEach((step, i) => {
+    const box = document.createElement('div');
+    box.className = 'steps-trace-step';
+    const head = document.createElement('div');
+    head.className = 'steps-trace-head';
+    head.textContent = `${i + 1}. ${step.module}`;
+    box.appendChild(head);
+    [['System prompt', (step.prompt || {}).System_prompt],
+     ['User prompt', (step.prompt || {}).User_prompt],
+     ['Response', typeof step.response === 'string' ? step.response : JSON.stringify(step.response, null, 1)]]
+      .forEach(([label, content]) => {
+        if (!content) return;
+        const inner = document.createElement('details');
+        const s = document.createElement('summary');
+        s.textContent = label;
+        inner.appendChild(s);
+        const pre = document.createElement('pre');
+        pre.textContent = content;
+        inner.appendChild(pre);
+        box.appendChild(inner);
+      });
+    details.appendChild(box);
+  });
+  logEl.appendChild(details);
   logEl.scrollTop = logEl.scrollHeight;
 }
 
@@ -1588,6 +1643,7 @@ async function handleChatData(data) {
       addAssistantMessage(last.content);
     }
     await renderGapFillPanel(data.needs_input);
+    renderStepsTrace(data.llm_steps);
     return;
   }
 
@@ -1603,6 +1659,7 @@ async function handleChatData(data) {
     }
     saveSession(null);
   }
+  renderStepsTrace(data.llm_steps);
 }
 
 async function send() {

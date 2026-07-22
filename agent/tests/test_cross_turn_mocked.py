@@ -39,7 +39,7 @@ print("--- extraction: known_state carried into the prompt ---")
 captured_prompts: list[str] = []
 
 
-def fake_call(messages, json_mode):
+def fake_call(messages, json_mode, module="LLM"):
     captured_prompts.append(messages[0]["content"])
     return (
         json.dumps(

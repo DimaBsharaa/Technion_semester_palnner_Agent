@@ -108,14 +108,52 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def _call(messages: list[dict], json_mode: bool) -> tuple[str, float]:
+# --- Per-request LLM-call trace (course-spec /api/execute "steps") ---
+# Thread-local so concurrent requests never mix traces. Each entry follows
+# the course's required schema: module name (consistent with the
+# architecture diagram), the exact prompts, and the raw response.
+import threading as _threading
+
+_trace_local = _threading.local()
+
+
+def start_llm_trace() -> None:
+    _trace_local.steps = []
+
+
+def get_llm_trace() -> list[dict]:
+    return getattr(_trace_local, "steps", [])
+
+
+def record_llm_step(module: str, messages: list[dict], response_payload) -> None:
+    steps = getattr(_trace_local, "steps", None)
+    if steps is None:
+        return
+    system = "\n".join(m.get("content") or "" for m in messages if m.get("role") == "system")
+    user = "\n".join(
+        f"[{m.get('role')}] {m.get('content') or json.dumps(m.get('tool_calls', ''), ensure_ascii=False)}"
+        for m in messages
+        if m.get("role") != "system"
+    )
+    steps.append(
+        {
+            "module": module,
+            "prompt": {"System_prompt": system, "User_prompt": user},
+            "response": response_payload,
+        }
+    )
+
+
+def _call(messages: list[dict], json_mode: bool, module: str = "LLM") -> tuple[str, float]:
     kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
     response = _get_client().chat.completions.create(model=MODEL, messages=messages, **kwargs)
     usage = response.usage
     cost = (usage.prompt_tokens / 1_000_000) * PRICE_INPUT_PER_1M + (
         usage.completion_tokens / 1_000_000
     ) * PRICE_OUTPUT_PER_1M
-    return response.choices[0].message.content, cost
+    content = response.choices[0].message.content
+    record_llm_step(module, messages, {"text": content})
+    return content, cost
 
 
 def _parse_json(text: str) -> dict:
@@ -301,7 +339,7 @@ student to supply a course number.
 
 Respond with ONLY the JSON object, no other text.""",
     }
-    content, cost = _call([system] + messages, json_mode=True)
+    content, cost = _call([system] + messages, json_mode=True, module="Understand")
     state = _parse_json(content)
     return _normalize_state(state), cost
 
@@ -504,7 +542,7 @@ Course data:
 
 Student's question: {last_user.get("content", "")}""",
     }
-    return _call([system], json_mode=False)
+    return _call([system], json_mode=False, module="CourseQA")
 
 
 def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[str]]:
@@ -704,7 +742,7 @@ Respond with ONLY a JSON object: {{"course_numbers": ["...", ...], \
 "repair_strategy": "{'one of the strategy names above' if previous_plan is not None else 'initial_draft'}", \
 "repair_reasoning": "one short sentence, or empty string on the first draft"}}.""",
     }
-    content, cost = _call([system], json_mode=True)
+    content, cost = _call([system], json_mode=True, module="PlannerDraft")
     parsed = _parse_json(content)
     course_numbers = [c for c in parsed.get("course_numbers", []) if c in track.courses]
     repair_strategy = parsed.get("repair_strategy") or ("initial_draft" if previous_plan is None else "swap_elective")
@@ -740,7 +778,7 @@ Candidates:
 Respond with ONLY a JSON object: {{"winner": "<label of the winning \
 candidate, exactly as given>", "reasoning": "one short sentence"}}.""",
     }
-    content, cost = _call([system], json_mode=True)
+    content, cost = _call([system], json_mode=True, module="PlanChooser")
     parsed = _parse_json(content)
     labels = {c["label"] for c in comparison}
     winner = parsed.get("winner") if parsed.get("winner") in labels else comparison[0]["label"]
@@ -817,7 +855,7 @@ a real trade-off exists, state it as already-considered context in this \
 same message. Plain prose, no JSON, no headers, no bullet-pointed \
 interrogation of the student.""",
     }
-    return _call([system], json_mode=False)
+    return _call([system], json_mode=False, module="Explainer")
 
 
 def run_agent_turn(
