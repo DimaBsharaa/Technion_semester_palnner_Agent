@@ -112,6 +112,18 @@
   .msg-tool.pass { border-color: var(--grn); }
   .msg-tool.fail { border-color: var(--red); }
   .msg-system-note { align-self: center; font-size: .8rem; color: var(--mut); font-style: italic; }
+  #specRunner { margin: 6px 14px 0; padding: 8px 12px; border: 1px dashed rgba(120,130,160,.45);
+    border-radius: 12px; background: rgba(255,255,255,.55); }
+  .spec-row { display: flex; gap: 8px; align-items: center; }
+  .spec-tag { font-size: .68rem; font-weight: 800; letter-spacing: .06em; color: var(--blue-deep);
+    border: 1px solid var(--blue); border-radius: 6px; padding: 2px 6px; white-space: nowrap; }
+  #specPrompt { flex: 1; resize: vertical; font: inherit; font-size: .8rem; padding: 6px 10px;
+    border: 1px solid var(--edge-soft); border-radius: 8px; min-height: 30px; }
+  #specRun { font: inherit; font-size: .8rem; font-weight: 700; color: #fff; background: var(--blue);
+    border: 0; border-radius: 8px; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+  #specRun:disabled { opacity: .55; cursor: wait; }
+  #specResponse { white-space: pre-wrap; font-size: .82rem; margin: 8px 2px 0; padding: 10px 12px;
+    background: rgba(53,99,233,.06); border-radius: 10px; }
   .steps-trace { align-self: stretch; margin: 2px 6px; font-size: .78rem; color: var(--mut);
     background: rgba(120,130,160,.06); border: 1px dashed rgba(120,130,160,.35); border-radius: 10px; padding: 6px 10px; }
   .steps-trace > summary { cursor: pointer; user-select: none; font-weight: 600; }
@@ -587,6 +599,18 @@
   <span class="budget" id="budget">session cost: $0.0000</span>
 </header>
 
+<section id="specRunner">
+  <div class="spec-row">
+    <span class="spec-tag">API</span>
+    <textarea id="specPrompt" rows="1" placeholder="One-shot prompt to the agent (POST /api/execute) — e.g. 'I'm starting semester 4, passed everything, no Sundays, normal pace'"></textarea>
+    <button id="specRun">Run Agent</button>
+  </div>
+  <div id="specResult" style="display:none">
+    <div id="specResponse"></div>
+    <div id="specSteps"></div>
+  </div>
+</section>
+
 <div id="log"></div>
 
 <div id="trackSelectForm" class="card intake-form">
@@ -978,7 +1002,8 @@ function addSystemNote(text) {
 
 // Collapsible per-turn trace of every LLM call the agent made this turn
 // (module + exact prompts + response) - the course-spec "steps" view.
-function renderStepsTrace(steps) {
+function renderStepsTrace(steps, container) {
+  const target = container || logEl;
   if (!steps || !steps.length) return;
   const details = document.createElement('details');
   details.className = 'steps-trace';
@@ -1008,9 +1033,43 @@ function renderStepsTrace(steps) {
       });
     details.appendChild(box);
   });
-  logEl.appendChild(details);
-  logEl.scrollTop = logEl.scrollHeight;
+  target.appendChild(details);
+  if (target === logEl) logEl.scrollTop = logEl.scrollHeight;
 }
+
+// --- Course-spec runner: one-shot POST /api/execute from the top bar ---
+document.getElementById('specRun').addEventListener('click', async () => {
+  const promptText = document.getElementById('specPrompt').value.trim();
+  if (!promptText) return;
+  const btn = document.getElementById('specRun');
+  const resultEl = document.getElementById('specResult');
+  const respEl = document.getElementById('specResponse');
+  const stepsEl = document.getElementById('specSteps');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+  resultEl.style.display = 'block';
+  respEl.textContent = 'The agent is working — this can take up to a minute or two…';
+  stepsEl.innerHTML = '';
+  try {
+    const r = await fetch(`${backendUrlEl.value}/api/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: promptText }),
+    });
+    const data = await r.json();
+    if (data.status === 'ok') {
+      respEl.textContent = data.response;
+    } else {
+      respEl.textContent = `Error: ${data.error}`;
+    }
+    renderStepsTrace(data.steps, stepsEl);
+  } catch (err) {
+    respEl.textContent = `Error talking to /api/execute: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Agent';
+  }
+});
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
