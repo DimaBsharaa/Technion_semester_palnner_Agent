@@ -17,7 +17,6 @@ for different students in different tracks.
 import json
 from pathlib import Path
 
-from prereq_parser import collect_prereq_courses
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _MANDATORY_CATEGORY_NAMES = {"מקצועות חובה", "Mandatory", "Mandatory option"}
@@ -76,10 +75,20 @@ class Track:
     def _compute_mandatory_prereq_depths(self) -> dict[str, int]:
         """Technion's own data has no "recommended semester" field for any
         course (confirmed: every leaf's Vpriox/Cgcat field is blank) - this
-        infers a rough ordering instead, from how deep each mandatory course
-        sits in the *intra-mandatory* prerequisite chain. depth 0 = no
-        mandatory prerequisites; depth N = requires a depth-(N-1) mandatory
-        course first. A heuristic approximation, not ground truth."""
+        infers a rough ordering instead from the prerequisite chain across
+        the WHOLE track catalog, honoring the AND/OR structure: an OR group
+        needs only its easiest-to-reach alternative (min), an AND group
+        needs all parts (max). depth 0 = takeable in semester 1; depth N =
+        at least N semesters of prerequisites first.
+
+        An earlier version only counted prerequisites that were themselves
+        on the mandatory list, which put courses like Statistics 1 or Game
+        Theory (whose prerequisites live in other requirement categories)
+        at depth 0 - i.e. "semester 1" - and the intake checklist then asked
+        a semester-2 student about them. Alternatives outside the track
+        catalog are ignored inside OR groups (can't be sequenced) rather
+        than counted as depth 0, which would have the same collapsing
+        effect. A heuristic approximation, not ground truth."""
         depths: dict[str, int] = {}
 
         def depth(course_number: str, stack: frozenset = frozenset()) -> int:
@@ -90,18 +99,26 @@ class Track:
             course = self.courses.get(course_number)
             if course is None:
                 return 0
-            mandatory_prereqs = [
-                p
-                for p in collect_prereq_courses(course["prerequisites"])
-                if p in self.mandatory_course_numbers
-            ]
-            result = (
-                0
-                if not mandatory_prereqs
-                else 1 + max(depth(p, stack | {course_number}) for p in mandatory_prereqs)
-            )
-            depths[course_number] = result
-            return result
+
+            def layers_before(tree) -> int | None:
+                """Semester-layers needed before this course per the prereq
+                tree; None = unknowable (references only courses outside
+                this track's catalog)."""
+                if tree is None:
+                    return 0
+                if "course" in tree:
+                    p = tree["course"]
+                    if p not in self.courses:
+                        return None
+                    return depth(p, stack | {course_number}) + 1
+                known = [v for v in (layers_before(a) for a in tree.get("args", [])) if v is not None]
+                if not known:
+                    return None
+                return min(known) if tree.get("op") == "or" else max(known)
+
+            result = layers_before(course["prerequisites"])
+            depths[course_number] = 0 if result is None else result
+            return depths[course_number]
 
         for c in self.mandatory_course_numbers:
             depth(c)

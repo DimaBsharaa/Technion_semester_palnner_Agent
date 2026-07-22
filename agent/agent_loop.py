@@ -292,6 +292,15 @@ than a normal full course load (e.g. "just the one retake", "as few \
 credits as possible") - false by default, since a normal semester should \
 carry a real course load unless they've said otherwise}}
 - "passed_courses": real 8-digit course numbers (from either list above).
+- "passed_all_expected": true when the student says they passed \
+everything so far / everything expected / everything in all their \
+previous semesters (e.g. "I passed everything in my first semester" from \
+a student starting semester 2). That statement fully answers the \
+course-status question: leave passed_courses empty if you like - the \
+expected list is filled in deterministically by code - and "courses" \
+must NOT appear in missing_fields. false when they only partially \
+described their record or mentioned failures alongside it (failures \
+still go in failed_courses either way).
 - "failed_courses": real 8-digit course numbers they said they failed or \
 still need to take.
 - "remove_courses": real 8-digit course numbers the student explicitly \
@@ -388,6 +397,19 @@ def _normalize_state(state: dict) -> dict:
 
     valid_missing = {"semester_number", "weekdays", "pace", "courses"}
     state["missing_fields"] = [f for f in (state.get("missing_fields") or []) if f in valid_missing]
+
+    # "I passed everything so far" answers the course-status question in
+    # full - backfill_passed_courses fills the actual list from the track's
+    # expected-by-now set, so re-asking via the checklist (observed live:
+    # a semester-2 student who said exactly that still got the passed/failed
+    # checklist) is pure re-asking of a settled fact. Enforced here in code
+    # rather than trusted to the extraction model's judgment.
+    state["passed_all_expected"] = bool(state.get("passed_all_expected", False))
+    if state["passed_all_expected"]:
+        state["missing_fields"] = [f for f in state["missing_fields"] if f != "courses"]
+        if not state["missing_fields"]:
+            state["ready_to_plan"] = True
+            state["clarifying_question"] = None
 
     return state
 
