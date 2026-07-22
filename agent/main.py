@@ -230,11 +230,11 @@ def root_gui():
 def team_info():
     return {
         "group_batch_order_number": os.environ.get("GROUP_BATCH_ORDER", "TODO_batch_order"),
-        "team_name": os.environ.get("TEAM_NAME", "Semester Planning Agent"),
+        "team_name": os.environ.get("TEAM_NAME", "APEX"),
         "students": [
             {"name": "Manhal Ghoummaid", "email": "manhal@campus.technion.ac.il"},
-            {"name": "Diyar Husayyan", "email": "diyarh@campus.technion.ac.il"},
             {"name": "Dima Bshara", "email": "dima.bshara@campus.technion.ac.il"},
+            {"name": "Diyar Husayyan", "email": "diyarh@campus.technion.ac.il"},
         ],
     }
 
