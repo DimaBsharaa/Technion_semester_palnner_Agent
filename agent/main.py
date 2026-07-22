@@ -293,7 +293,10 @@ def model_architecture():
 
 
 class ExecuteRequest(BaseModel):
-    prompt: str
+    # Optional (default "") so a missing/empty prompt returns the spec's
+    # {status:error,...} envelope from the handler rather than FastAPI's
+    # default 422 validation error, which wouldn't match the required shape.
+    prompt: str = ""
 
 
 def _plan_to_text(result: dict) -> str:
