@@ -587,6 +587,14 @@ def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[
     expected_by_now = {
         c for c, d in track.mandatory_prereq_depths.items() if d <= semester_number - 2
     } - failed
+    # Choose-one-variant requirements due by now: mark ALL variants passed
+    # (we can't know which one the student took, and later prerequisites
+    # accept any variant of the group), unless the student explicitly named
+    # one as failed.
+    for group in track.mandatory_choice_groups:
+        options = set(group["options"])
+        if group["depth"] <= semester_number - 2 and not (options & failed):
+            expected_by_now |= options
     auto_passed = set(expected_by_now)
     for c in expected_by_now:
         if c in track.courses:

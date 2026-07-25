@@ -70,9 +70,59 @@ class Track:
             if category["name"] in _MANDATORY_CATEGORY_NAMES
             for c in _leaf_courses(category)
         }
-        self.mandatory_prereq_depths: dict[str, int] = self._compute_mandatory_prereq_depths()
+        # Required courses that come as "pick one variant" groups (e.g.
+        # calculus 1מ' OR 1מ2) live under the Mandatory category but NOT in
+        # flat "Mandatory option" leaves - missing them made the agent treat
+        # calculus/algebra/probability as ordinary electives (found live: a
+        # first-semester plan without infi or algebra).
+        self.mandatory_choice_groups: list[dict] = self._extract_mandatory_choice_groups()
+        all_depths = self._compute_prereq_depths(
+            self.mandatory_course_numbers | {o for g in self.mandatory_choice_groups for o in g["options"]}
+        )
+        self.mandatory_prereq_depths: dict[str, int] = {
+            c: d for c, d in all_depths.items() if c in self.mandatory_course_numbers
+        }
+        for group in self.mandatory_choice_groups:
+            group["depth"] = min(all_depths.get(o, 0) for o in group["options"])
 
-    def _compute_mandatory_prereq_depths(self) -> dict[str, int]:
+    def _extract_mandatory_choice_groups(self) -> list[dict]:
+        """Walks the requirement tree; every non-mandatory-named node that
+        sits under a mandatory category and whose children are all course
+        leaves is one choose-one-of group. Options are filtered to courses
+        this track's bundle actually has; groups fully covered by the flat
+        mandatory list are skipped (nothing new to require)."""
+        groups: list[dict] = []
+        seen: set[frozenset] = set()
+
+        def walk(node: dict, in_mandatory: bool):
+            name = node.get("name") or ""
+            here_mandatory = in_mandatory or name in _MANDATORY_CATEGORY_NAMES
+            children = node.get("children") or []
+            if (
+                in_mandatory
+                and name not in _MANDATORY_CATEGORY_NAMES
+                and children
+                and all("course" in c for c in children)
+            ):
+                options = [c for c in _leaf_courses(node) if c in self.courses]
+                key = frozenset(options)
+                if options and key not in seen and not key <= self.mandatory_course_numbers:
+                    seen.add(key)
+                    groups.append(
+                        {
+                            "label": " / ".join(self.courses[o]["name"] for o in options),
+                            "options": options,
+                        }
+                    )
+                return
+            for child in children:
+                if "course" not in child:
+                    walk(child, here_mandatory)
+
+        walk(self.requirement_tree, False)
+        return groups
+
+    def _compute_prereq_depths(self, seed_courses: set[str]) -> dict[str, int]:
         """Technion's own data has no "recommended semester" field for any
         course (confirmed: every leaf's Vpriox/Cgcat field is blank) - this
         infers a rough ordering instead from the prerequisite chain across
@@ -120,7 +170,7 @@ class Track:
             depths[course_number] = 0 if result is None else result
             return depths[course_number]
 
-        for c in self.mandatory_course_numbers:
+        for c in seed_courses:
             depth(c)
         return depths
 

@@ -115,7 +115,16 @@ def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: 
         sat = f", {cf['avg_general']}/5 liked" if cf["avg_general"] is not None else ""
         exams = c["exams"].get("moed_a", [])
         exam = f"exam {exams[0]['date']}" if exams else "no exam"
-        tag = "MANDATORY" if num in track.mandatory_course_numbers else "elective"
+        if num in track.mandatory_course_numbers:
+            tag = "MANDATORY"
+        else:
+            group = next((g for g in track.mandatory_choice_groups if num in g["options"]), None)
+            if group is None:
+                tag = "elective"
+            elif set(group["options"]) & passed_set:
+                tag = "elective (its required group is already satisfied)"
+            else:
+                tag = "MANDATORY-CHOICE: required, take exactly one of [" + group["label"] + "]"
         day_note = ""
         if excluded and c.get("schedule"):
             best = tools.pick_section(c, excluded)

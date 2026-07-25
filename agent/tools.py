@@ -96,6 +96,12 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
     missing_vs_expected = sorted(
         {c: track.courses[c]["name"] for c in (expected_completed - passed) if c in track.courses}.items()
     )
+    # Choose-one-variant requirements (calculus, algebra, probability...):
+    # due when the group's earliest variant sits at an expected-done depth
+    # and NO variant was passed.
+    for group in track.mandatory_choice_groups:
+        if group["depth"] <= semester_number - 2 and not (set(group["options"]) & passed):
+            missing_vs_expected.append((group["options"][0], f"{group['label']} (one of these is required)"))
     ahead_of_schedule = sorted(
         c for c in passed if c in depths and depths[c] > semester_number - 2
     )
@@ -134,6 +140,12 @@ def get_intake_options(track: Track) -> dict:
         for c in sorted(track.mandatory_course_numbers)
         if c in track.courses
     ]
+    # Choose-one-variant requirements appear as ONE row each (the student
+    # answers for the group; the first option stands in as its id).
+    for group in track.mandatory_choice_groups:
+        mandatory.append(
+            {"course_number": group["options"][0], "name": f"{group['label']} (אחת מהאפשרויות)", "depth": group["depth"]}
+        )
     mandatory.sort(key=lambda c: (c["depth"], c["course_number"]))
     return {
         "track_id": track.otjid,
@@ -903,6 +915,36 @@ def verify_plan(
                 ),
             }
         )
+
+    # Choose-one-variant requirements (calculus / algebra / probability...):
+    # a group the student could take RIGHT NOW (a variant is offered and its
+    # prerequisites are met) but hasn't passed and isn't taking is a real
+    # gap - these are the gateway courses that block half the degree, and
+    # skipping them is exactly the failure seen live (a semester-1 plan
+    # without infi or algebra). Skipped when the student explicitly asked
+    # for a minimal load (min_mandatory_courses == 0).
+    if min_mandatory_courses > 0:
+        plan_set = set(plan_course_numbers)
+        for group in track.mandatory_choice_groups:
+            options = set(group["options"])
+            if options & passed or options & plan_set:
+                continue
+            takeable = [
+                o
+                for o in group["options"]
+                if track.courses[o]["offered_next_semester"]
+                and _prereq_satisfied(track.courses[o]["prerequisites"], passed)
+            ]
+            if takeable:
+                issues.append(
+                    {
+                        "course": takeable[0],
+                        "reason": (
+                            f"required choice group not covered - must take one of: {group['label']} "
+                            "(gateway requirement, don't postpone)"
+                        ),
+                    }
+                )
 
     exam_dates = []
     for c in plan_course_numbers:
