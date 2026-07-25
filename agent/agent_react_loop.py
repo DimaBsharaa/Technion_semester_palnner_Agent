@@ -609,6 +609,7 @@ def run_agent_turn_v2(
     persistent_issue_pushed = False
     sport_padding_pushed = False
     removal_pushed = False
+    choice_group_pushed = False
     issues_pushed = 0
     stopped_reason = "step_limit_exhausted"
     final_course_numbers: list[str] = []
@@ -849,6 +850,60 @@ def run_agent_turn_v2(
                                 f"({', '.join(sport)}) - the limit is ONE. Replace the extras with real "
                                 "courses from the available-courses shortlist (substantive electives or "
                                 "remaining requirements), verify the new list, and deliver that."
+                            ),
+                        }
+                    )
+                    continue
+
+                # Choice-group pushback: the model tried to deliver while a
+                # required pick-one-variant group (calculus/algebra/physics/
+                # probability) it could cover RIGHT NOW is missing. Observed
+                # live even after two generic issue pushes (a first-semester
+                # plan kept orchestra over physics). This guard doesn't fix
+                # the plan - it hands the model the exact takeable variants
+                # with their facts, once, and the model decides which fits
+                # (or justifies leaving the gap honestly).
+                uncovered_groups = []
+                candidate_set = set(candidate)
+                passed_set_now = set(passed)
+                for grp in track.mandatory_choice_groups:
+                    opts = set(grp["options"])
+                    if opts & passed_set_now or opts & candidate_set:
+                        continue
+                    takeable = [
+                        o for o in grp["options"]
+                        if track.courses[o]["offered_next_semester"]
+                        and tools._prereq_satisfied(track.courses[o]["prerequisites"], passed_set_now)
+                    ]
+                    if takeable:
+                        uncovered_groups.append((grp, takeable))
+                if uncovered_groups and not choice_group_pushed and step < MAX_STEPS - 1:
+                    choice_group_pushed = True
+                    fact_lines = []
+                    for grp, takeable in uncovered_groups:
+                        variants = ", ".join(
+                            f"{o} {track.courses[o]['name']} ({track.courses[o]['points']} pts)"
+                            for o in takeable
+                        )
+                        fact_lines.append(f"- {grp['label']}: takeable now -> {variants}")
+                    tool_log.append(
+                        {"name": "choice_group_pushback", "args": {},
+                         "result": {"uncovered": [g["label"] for g, _ in uncovered_groups]}}
+                    )
+                    react_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": (
+                                "Not delivered: this plan skips required course group(s) the student "
+                                "can take RIGHT NOW - these are gateway requirements that block later "
+                                "courses, and postponing them compounds:\n"
+                                + "\n".join(fact_lines)
+                                + "\nPick ONE variant per group (weigh difficulty/reviews/schedule "
+                                "fit like any other decision), rebalance the rest of the plan if "
+                                "credits demand it, verify the corrected list and deliver. If you "
+                                "conclude a group genuinely cannot fit this semester, deliver anyway "
+                                "but say exactly why in the explanation."
                             ),
                         }
                     )
