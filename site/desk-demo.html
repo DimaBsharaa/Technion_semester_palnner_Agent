@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APEX - The Desk (design prototype)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%231E7D52'/%3E%3Cpath d='M18 5.5 L29.5 10.5 L18 15.5 L6.5 10.5 Z' fill='%23fff'/%3E%3Cpath d='M29.5 11 V16' stroke='%23fff' stroke-width='1.9' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='29.5' cy='17.9' r='1.8' fill='%23fff'/%3E%3Cpath d='M8.5 30.5 C8.5 22.5 11.5 19.8 17.5 18.3' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-dasharray='0.1 4.8'/%3E%3Ccircle cx='8.5' cy='30.5' r='2.3' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #F4EEE1; --card: #FFFFFF; --edge: #E7DCC6; --edge-soft: #EFE7D6;
+    --ink: #232F45; --ink2: #3A465E; --mut: #78705F;
+    --acc: #1E7D52; --acc-deep: #14573A; --acc-soft: rgba(30,125,82,.08);
+    --red: #D64545; --yel: #B4741E;
+    --ok-bg: #DCF3E3; --ok-ink: #1E7A45;
+    --warn-bg: #FFF3C4; --warn-ink: #8a6d00;
+    --shadow: 0 1px 2px rgba(35,47,69,.05), 0 6px 18px rgba(35,47,69,.06);
+    --disp: 'Space Grotesk', sans-serif; --body: 'Inter', sans-serif;
+  }
+  html[data-theme="dark"] {
+    --paper: #161B28; --card: #232B3D; --edge: #333E56; --edge-soft: #2B3448;
+    --ink: #E9EDF7; --ink2: #C3CBDD; --mut: #939CB0;
+    --acc: #7DD6A4; --acc-deep: #2B8F5F; --acc-soft: rgba(125,214,164,.1);
+    --red: #F07A6E; --yel: #E0B45C;
+    --ok-bg: rgba(76,193,122,.14); --ok-ink: #6FD695;
+    --warn-bg: rgba(232,197,88,.14); --warn-ink: #F0D77E;
+    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--body); background: var(--paper); color: var(--ink); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ===== Header ===== */
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--edge-soft); flex-shrink: 0; }
+  .logo { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(145deg, var(--acc), var(--acc-deep)); display: grid; place-items: center; }
+  header h1 { font-family: var(--disp); font-size: 1.02rem; letter-spacing: .05em; }
+  .demo-tag { font-size: .68rem; font-weight: 600; color: var(--warn-ink); background: var(--warn-bg); border-radius: 999px; padding: 3px 10px; }
+  header .spacer { margin-left: auto; }
+  .hdr-btn { font: inherit; font-size: .78rem; background: none; color: var(--ink2); border: 1px solid var(--edge-soft); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+
+  /* ===== The Desk: canvas + rail ===== */
+  main { flex: 1; display: grid; grid-template-columns: 1fr 360px; gap: 14px; padding: 14px 18px; min-height: 0; }
+  .canvas { display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-y: auto; padding-right: 2px; }
+  .rail { display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--edge-soft); border-radius: 14px; box-shadow: var(--shadow); min-height: 0; }
+
+  /* ---- summary strip ---- */
+  .summary { display: flex; gap: 18px; align-items: center; background: var(--card); border: 1px solid var(--edge-soft); border-radius: 14px; padding: 12px 16px; box-shadow: var(--shadow); flex-shrink: 0; }
+  .summary .stat b { font-family: var(--disp); font-size: 1.15rem; font-variant-numeric: tabular-nums; transition: color .4s; }
+  .summary .stat span { display: block; font-size: .68rem; color: var(--mut); }
+  .badge { margin-left: auto; font-size: .72rem; font-weight: 600; padding: 4px 11px; border-radius: 999px; background: var(--ok-bg); color: var(--ok-ink); }
+
+  /* ---- timetable ---- */
+  .board { background: var(--card); border: 1px solid var(--edge-soft); border-radius: 14px; box-shadow: var(--shadow); padding: 14px 16px; }
+  .board h2 { font-family: var(--disp); font-size: .85rem; margin-bottom: 10px; color: var(--ink2); }
+  .tt { display: grid; grid-template-columns: 44px repeat(5, 1fr); gap: 4px; }
+  .tt .dayhead { font-size: .7rem; font-weight: 600; color: var(--mut); text-align: center; padding-bottom: 4px; }
+  .tt .hour { font-size: .62rem; color: var(--mut); text-align: right; padding-right: 6px; transform: translateY(-6px); }
+  .tt .cell { border-top: 1px dashed var(--edge-soft); min-height: 34px; position: relative; }
+  .block { position: absolute; inset: 2px 2px auto 2px; border-radius: 8px; padding: 5px 8px; font-size: .66rem; font-weight: 600; color: #fff; line-height: 1.25; direction: rtl; text-align: right; transition: opacity .5s, transform .5s; }
+  .block small { display: block; font-weight: 400; opacity: .85; direction: ltr; text-align: right; }
+  .block.h2x { height: 64px; } .block.h1x { height: 30px; }
+  .block.leaving { opacity: 0; transform: scale(.9); }
+  .block.arriving { animation: arrive .6s cubic-bezier(.16,1,.3,1); }
+  @keyframes arrive { from { opacity: 0; transform: translateY(-8px); } }
+  .freeday { position: absolute; top: 100%; left: 0; right: 0; text-align: center; font-size: .64rem; color: var(--acc); font-weight: 600; opacity: 0; transition: opacity .6s .4s; }
+  .freeday.show { opacity: 1; }
+
+  /* ---- lower split: exams + courses ---- */
+  .lower { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .exam-row { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; flex-wrap: wrap; }
+  .exam { background: var(--acc-soft); border: 1px solid var(--edge-soft); border-radius: 10px; padding: 7px 10px; font-size: .7rem; direction: rtl; transition: opacity .4s; }
+  .exam b { display: block; direction: ltr; text-align: right; font-variant-numeric: tabular-nums; color: var(--acc-deep); }
+  html[data-theme="dark"] .exam b { color: var(--acc); }
+  .gap-chip { font-size: .64rem; color: var(--ok-ink); background: var(--ok-bg); padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+  .course-list { list-style: none; }
+  .course-list li { display: flex; gap: 9px; align-items: baseline; padding: 7px 0; border-top: 1px dashed var(--edge-soft); font-size: .78rem; transition: opacity .4s; }
+  .course-list li:first-child { border-top: 0; }
+  .dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; transform: translateY(1px); }
+  .course-list .nm { direction: rtl; font-weight: 600; }
+  .course-list .why { color: var(--mut); font-size: .68rem; direction: rtl; }
+  .course-list .pts { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink2); white-space: nowrap; }
+
+  /* ---- rail (chat) ---- */
+  .rail-head { padding: 10px 14px; border-bottom: 1px solid var(--edge-soft); font-family: var(--disp); font-size: .8rem; color: var(--ink2); }
+  .chat { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+  .bub { max-width: 92%; padding: 8px 12px; border-radius: 13px; font-size: .78rem; line-height: 1.45; }
+  .bub.me { align-self: flex-end; background: var(--warn-bg); color: var(--ink); border-bottom-right-radius: 4px; }
+  .bub.ag { align-self: flex-start; background: var(--acc-soft); border-bottom-left-radius: 4px; }
+  .bub.sys { align-self: center; color: var(--mut); font-size: .68rem; font-style: italic; background: none; padding: 2px; }
+  .steps-mini { align-self: flex-start; font-size: .66rem; color: var(--mut); border: 1px dashed var(--edge); border-radius: 9px; padding: 6px 10px; }
+  .steps-mini b { color: var(--acc-deep); } html[data-theme="dark"] .steps-mini b { color: var(--acc); }
+  .try { align-self: flex-start; font: inherit; font-size: .74rem; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--acc), var(--acc-deep)); border: 0; border-radius: 999px; padding: 7px 14px; cursor: pointer; }
+  .try:active { transform: scale(.97); }
+  .try:disabled { opacity: .5; cursor: default; }
+  .composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--edge-soft); }
+  .composer input { flex: 1; font: inherit; font-size: .78rem; padding: 8px 12px; border: 1px solid var(--edge-soft); border-radius: 10px; background: var(--paper); color: var(--ink); }
+  .composer button { font: inherit; font-size: .78rem; font-weight: 600; color: #fff; background: linear-gradient(135deg, var(--acc), var(--acc-deep)); border: 0; border-radius: 10px; padding: 8px 14px; cursor: pointer; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .block, .exam, .course-list li, .freeday { transition: none; animation: none !important; }
+  }
+  @media (max-width: 900px) {
+    body { overflow: auto; height: auto; }
+    main { grid-template-columns: 1fr; }
+    .lower { grid-template-columns: 1fr; }
+    .rail { order: -1; max-height: 300px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo" aria-hidden="true">
+    <svg viewBox="0 0 32 32" width="21" height="21" fill="none" stroke-linecap="round">
+      <path d="M16 3.5 L27 8.5 L16 13.5 L5 8.5 Z" fill="#fff"/>
+      <path d="M27 9 V14" stroke="#fff" stroke-width="1.8"/>
+      <circle cx="27" cy="15.8" r="1.7" fill="#fff"/>
+      <path d="M6.5 28 C6.5 20.5 9.5 17.8 15.5 16.3" stroke="#fff" stroke-width="2.5" stroke-dasharray="0.1 4.6"/>
+      <circle cx="6.5" cy="28" r="2.2" fill="#fff"/>
+    </svg>
+  </div>
+  <h1>APEX</h1>
+  <span class="demo-tag">The Desk: design prototype, mock data, no agent connected</span>
+  <span class="spacer"></span>
+  <button class="hdr-btn" id="themeBtn">Dark mode</button>
+</header>
+
+<main>
+  <!-- ============ THE CANVAS: the living plan ============ -->
+  <section class="canvas">
+    <div class="summary">
+      <div class="stat"><b id="statCr">15.0</b><span>credits</span></div>
+      <div class="stat"><b>5</b><span>courses</span></div>
+      <div class="stat"><b id="statEx">3</b><span>exams, all spaced 3+ days</span></div>
+      <span class="badge" id="badge">Plan verified</span>
+    </div>
+
+    <div class="board">
+      <h2>Winter 2026 week (demo schedule)</h2>
+      <div class="tt" id="tt">
+        <div></div>
+        <div class="dayhead">Sun</div><div class="dayhead" style="position:relative">Mon<span class="freeday" id="freeMon"></span></div>
+        <div class="dayhead">Tue</div><div class="dayhead">Wed</div><div class="dayhead">Thu</div>
+      </div>
+    </div>
+
+    <div class="lower">
+      <div class="board">
+        <h2>Exam calendar (moed A)</h2>
+        <div class="exam-row" id="examRow"></div>
+      </div>
+      <div class="board">
+        <h2>Courses and why</h2>
+        <ul class="course-list" id="courses"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ THE RAIL: the conversation ============ -->
+  <aside class="rail">
+    <div class="rail-head">Talk to your advisor</div>
+    <div class="chat" id="chat">
+      <div class="bub me">I'm starting semester 3 of Data and Information Engineering, passed everything, normal pace.</div>
+      <div class="steps-mini">Agent worked: <b>Understand</b> then <b>PlanningLoop</b> called verify, exam spacing, weekly schedule. 10 LLM calls.</div>
+      <div class="bub ag">Here is your semester: 15.0 credits, verified, no clashes, every exam has 3+ study days. Data Structures anchors the plan; it unlocks most of year 2.</div>
+      <div class="bub sys">Watch the plan update in place. Try the revision:</div>
+      <button class="try" id="tryBtn">Try: "I can't come on Mondays"</button>
+    </div>
+    <div class="composer">
+      <input placeholder="Ask for any change..." disabled>
+      <button disabled>Send</button>
+    </div>
+  </aside>
+</main>
+
+<script>
+// ============ mock plan data (from a real agent run; times are demo) ============
+const COLORS = { ds: '#4A6FA5', st: '#C2543B', sx: '#1D8A96', or: '#946BDE', im: '#B4741E', gt: '#2B8F5F' };
+const START = { ds: [['Sun', 2, 2, 'מבני נתונים ואלגוריתמים', '10:30'], ['Wed', 6, 1, 'מבני נתונים - תרגול', '14:30']],
+                st: [['Mon', 1, 2, 'סטטיסטיקה 1', '09:30'], ['Thu', 4, 1, 'סטטיסטיקה - תרגול', '12:30']],
+                sx: [['Tue', 5, 2, 'מודלים סטוכסטיים בחקר ביצועים', '13:30']],
+                or: [['Wed', 9, 1, 'תזמורת', '17:30']],
+                im: [['Sun', 7, 1, 'סדנת עיבוד תמונה', '15:30']] };
+const DAYS = { Sun: 2, Mon: 3, Tue: 4, Wed: 5, Thu: 6 };
+const HOURS = ['08:30','09:30','10:30','11:30','12:30','13:30','14:30','15:30','16:30','17:30'];
+
+const tt = document.getElementById('tt');
+for (let r = 0; r < HOURS.length; r++) {
+  const h = document.createElement('div'); h.className = 'hour'; h.textContent = HOURS[r]; tt.appendChild(h);
+  for (let c = 0; c < 5; c++) { const cell = document.createElement('div'); cell.className = 'cell'; cell.dataset.rc = `${r}-${c}`; tt.appendChild(cell); }
+}
+function place(key, defs) {
+  defs.forEach(([day, row, span, name, time], i) => {
+    const cell = tt.querySelector(`[data-rc="${row}-${DAYS[day] - 2}"]`);
+    const b = document.createElement('div');
+    b.className = `block ${span === 2 ? 'h2x' : 'h1x'} arriving`; b.dataset.key = key;
+    b.style.background = COLORS[key];
+    b.innerHTML = `${name}${span === 2 ? `<small>${time}</small>` : ''}`;
+    cell.appendChild(b);
+  });
+}
+Object.entries(START).forEach(([k, defs]) => place(k, defs));
+
+// exams + courses
+const examRow = document.getElementById('examRow');
+const EXAMS = [['מבני נתונים', '09.02'], ['gap', '3 days'], ['סטטיסטיקה 1', '12.02'], ['gap', '7 days'], ['מודלים סטוכסטיים', '19.02']];
+function renderExams(list) {
+  examRow.innerHTML = '';
+  list.forEach(([a, b]) => {
+    if (a === 'gap') { const g = document.createElement('span'); g.className = 'gap-chip'; g.textContent = b + ' to study'; examRow.appendChild(g); }
+    else { const e = document.createElement('div'); e.className = 'exam'; e.innerHTML = `${a}<b>${b}</b>`; examRow.appendChild(e); }
+  });
+}
+renderExams(EXAMS);
+
+const COURSES = [
+  ['ds', 'מבני נתונים ואלגוריתמים', 'פותח את רוב שנה ב', '4.0'],
+  ['st', 'סטטיסטיקה 1', 'חובה מרכזית', '3.5'],
+  ['sx', 'מודלים סטוכסטיים בחקר ביצועים', 'שער לקורסי המשך', '3.5'],
+  ['im', 'סדנת עיבוד תמונה', 'ללא מבחן, מאזנת עומס', '2.0'],
+  ['or', 'תזמורת', 'ללא מבחן, אהובה מאוד', '2.0'],
+];
+const coursesEl = document.getElementById('courses');
+function renderCourses(list) {
+  coursesEl.innerHTML = '';
+  list.forEach(([k, nm, why, pts]) => {
+    const li = document.createElement('li'); li.dataset.key = k;
+    li.innerHTML = `<span class="dot" style="background:${COLORS[k]}"></span><span><span class="nm">${nm}</span><br><span class="why">${why}</span></span><span class="pts">${pts}</span>`;
+    coursesEl.appendChild(li);
+  });
+}
+renderCourses(COURSES);
+
+// ============ the revision demo: plan updates IN PLACE ============
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const d = document.documentElement.dataset.theme === 'dark';
+  if (d) delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = 'dark';
+  document.getElementById('themeBtn').textContent = d ? 'Dark mode' : 'Light mode';
+});
+
+document.getElementById('tryBtn').addEventListener('click', () => {
+  const chat = document.getElementById('chat');
+  const btn = document.getElementById('tryBtn'); btn.disabled = true;
+  const add = (cls, txt) => { const b = document.createElement('div'); b.className = 'bub ' + cls; b.textContent = txt; chat.insertBefore(b, btn); chat.scrollTop = chat.scrollHeight; };
+  add('me', "I can't come on Mondays.");
+  setTimeout(() => add('sys', 'revising: verify, weekly schedule, swap...'), 500);
+
+  // statistics leaves (its only slots are Mon+Thu), game theory arrives (Tue+Wed)
+  setTimeout(() => {
+    document.querySelectorAll('[data-key="st"]').forEach(el => el.classList.add('leaving'));
+    document.querySelectorAll('.course-list li[data-key="st"]').forEach(el => el.style.opacity = 0);
+  }, 1200);
+  setTimeout(() => {
+    document.querySelectorAll('.block[data-key="st"]').forEach(el => el.remove());
+    place('gt', [['Tue', 2, 2, 'תורת המשחקים והתנהגות כלכלית', '10:30'], ['Wed', 3, 1, 'תורת המשחקים - תרגול', '11:30']]);
+    renderCourses([COURSES[0], ['gt', 'תורת המשחקים והתנהגות כלכלית', 'חלופה ללא ימי שני', '3.5'], COURSES[2], COURSES[3], COURSES[4]]);
+    renderExams([['מבני נתונים', '09.02'], ['gap', '9 days'], ['מודלים סטוכסטיים', '19.02'], ['gap', '4 days'], ['תורת המשחקים', '24.02']]);
+    const free = document.getElementById('freeMon'); free.textContent = 'free'; free.classList.add('show');
+    document.getElementById('badge').textContent = 'Re-verified, Mondays clear';
+  }, 1900);
+  setTimeout(() => add('ag', 'Done. Statistics 1 met only on Mondays, so I swapped in Game Theory (same 3.5 points, gateway kept). Monday is now completely free and your exams gained breathing room.'), 2600);
+}, { once: true });
+</script>
+</body>
+</html>
