@@ -26,6 +26,14 @@ python3 -m http.server 4173 --directory site                        # frontend
 
 **Gate: all 5 pass or stop here.**
 
+## Automated proof scripts (in addition to the levels above)
+
+| Script | Proves | Cost |
+|---|---|---|
+| `agent/tests/test_smoke.py` | Backend/frontend are alive (same as Level 0, scripted) | $0 |
+| `agent/tests/test_agent_architecture.py` | react mode makes genuine OpenAI tool-calling decisions and its step count/tool sequence vary with input complexity; the legacy pipeline mode never does | ~$0.10-0.25 |
+| `agent/tests/test_agent_quality_live.py` | A follow-up exam-conflict message gets a minimal, settled revision, not a from-scratch replan (Level 3.2) | ~$0.10-0.15 |
+
 ## Level 1 — The obvious happy path (one turn, ~$0.05)
 
 The single most basic promise: a student with a simple, complete request gets
