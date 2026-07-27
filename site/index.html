@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>APEX - Semester Planning Agent</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231E7D52'/%3E%3Cpath d='M8 26 L16 7' stroke='%23fff' stroke-width='2.8' fill='none' stroke-linecap='round'/%3E%3Cpath d='M16 7 L24 26' stroke='%23fff' stroke-width='2.8' fill='none' stroke-linecap='round'/%3E%3Cpath d='M11.6 19.8 Q16 17 20.4 19.8' stroke='%23fff' stroke-width='2.4' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='6.6' r='2.6' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%231E7D52'/%3E%3Cpath d='M18 5.5 L29.5 10.5 L18 15.5 L6.5 10.5 Z' fill='%23fff'/%3E%3Cpath d='M29.5 11 V16' stroke='%23fff' stroke-width='1.9' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='29.5' cy='17.9' r='1.8' fill='%23fff'/%3E%3Cpath d='M8.5 30.5 C8.5 22.5 11.5 19.8 17.5 18.3' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-dasharray='0.1 4.8'/%3E%3Ccircle cx='8.5' cy='30.5' r='2.3' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -691,10 +691,14 @@
 <header>
   <div class="brand">
     <div class="logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4.5 20 L12 4.5 L19.5 20" />
-        <path d="M7.6 14.5 Q12 11.8 16.4 14.5" />
-        <circle cx="12" cy="4.5" r="2" fill="#fff" stroke="none" />
+      <!-- Emblem: a dotted route of milestones climbing to the graduation
+           cap - the agent plots your path through the degree. -->
+      <svg viewBox="0 0 32 32" width="23" height="23" fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 3.5 L27 8.5 L16 13.5 L5 8.5 Z" fill="#fff"/>
+        <path d="M27 9 V14" stroke="#fff" stroke-width="1.8"/>
+        <circle cx="27" cy="15.8" r="1.7" fill="#fff"/>
+        <path d="M6.5 28 C6.5 20.5 9.5 17.8 15.5 16.3" stroke="#fff" stroke-width="2.5" stroke-dasharray="0.1 4.6"/>
+        <circle cx="6.5" cy="28" r="2.2" fill="#fff"/>
       </svg>
     </div>
     <h1 aria-label="APEX">
