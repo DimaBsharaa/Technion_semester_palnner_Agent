@@ -84,8 +84,9 @@ def test_exam_conflict_revision_is_minimal_and_settled() -> list[str]:
         else:
             print(
                 f"  INFO: conflict target {conflict_course} ({conflict_name}) is a non-negotiable "
-                "retake - REMOVED in revision (known gap: retake dropped under pressure, not "
-                "enforced in code)"
+                "retake - REMOVED in revision despite the one-shot retake_dropped_pushback guard "
+                "(the model may omit it after the pushback only with an honest explanation - "
+                "check the turn's tool_log/explanation)"
             )
     elif conflict_course in new_courses:
         failures.append(

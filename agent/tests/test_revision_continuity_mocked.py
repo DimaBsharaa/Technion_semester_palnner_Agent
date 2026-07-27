@@ -323,6 +323,91 @@ finally:
     _tools.verify_plan = orig_verify
 
 
+# --- Part 2f: dropping the retake without being asked is pushed back ---
+print("--- dropping the required retake uninvited triggers the one-shot pushback ---")
+
+RETAKE = "00940224"  # KNOWN_STATE's failed course, present in PREVIOUS_PLAN
+PLAN_NO_RETAKE = ["00960425", "03940902"]  # model "resolves" the conflict by dropping the retake
+
+
+def stub_verify_pass(track_, plan, passed_, **kw):
+    # Clean verify so the underload/issue-budget guards stay quiet and this
+    # test isolates the retake guard specifically.
+    return {"pass": True, "total_credits": 18.0, "workload_score": 60.0, "issues": []}
+
+
+drop_attempts = {"n": 0}
+
+
+def script_drop_retake(_messages):
+    drop_attempts["n"] += 1
+    tc = types.SimpleNamespace(id=f"r{drop_attempts['n']}", function=types.SimpleNamespace(
+        name="deliver_plan",
+        arguments=json.dumps({"course_numbers": PLAN_NO_RETAKE, "explanation": "moved the exam conflict away"})))
+    return types.SimpleNamespace(content=None, tool_calls=[tc]), 0.0
+
+
+arl._extract_student_state = fake_extract
+arl._call_with_tools = script_drop_retake
+_tools.verify_plan = stub_verify_pass
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID,
+        [{"role": "user", "content": "I have a wedding on the data structures exam date, fix it"}],
+        0.0,
+        known_context={"state": KNOWN_STATE, "previous_plan": PREVIOUS_PLAN, "previous_issues": []},
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    check("retake_dropped_pushback" in names, "pushback fired when the uninvited drop was delivered")
+    check(names.count("retake_dropped_pushback") == 1, "retake pushback fires exactly once (no infinite loop)")
+    check(res["stopped_reason"] == "delivered", "second delivery stands after the one-shot pushback")
+    check(drop_attempts["n"] >= 2, "model was actually sent back and tried again")
+finally:
+    arl._extract_student_state = orig_extract
+    arl._call_with_tools = orig_call
+    _tools.verify_plan = orig_verify
+
+
+# --- Part 2g: an EXPLICIT removal request for the retake is respected ---
+print("--- explicitly requested retake removal does NOT trigger the pushback ---")
+
+
+def extract_remove_retake(track, messages, known_state=None):
+    st = dict(degraded)
+    st["remove_courses"] = [RETAKE]
+    return st, 0.0
+
+
+drop_attempts_2 = {"n": 0}
+
+
+def script_honor_removal(_messages):
+    drop_attempts_2["n"] += 1
+    tc = types.SimpleNamespace(id=f"h{drop_attempts_2['n']}", function=types.SimpleNamespace(
+        name="deliver_plan",
+        arguments=json.dumps({"course_numbers": PLAN_NO_RETAKE, "explanation": "removed as you asked"})))
+    return types.SimpleNamespace(content=None, tool_calls=[tc]), 0.0
+
+
+arl._extract_student_state = extract_remove_retake
+arl._call_with_tools = script_honor_removal
+_tools.verify_plan = stub_verify_pass
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID,
+        [{"role": "user", "content": f"please remove {RETAKE} from my plan"}],
+        0.0,
+        known_context={"state": KNOWN_STATE, "previous_plan": PREVIOUS_PLAN, "previous_issues": []},
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    check("retake_dropped_pushback" not in names, "no retake pushback when the student explicitly asked to remove it")
+    check(res["stopped_reason"] == "delivered", "explicit-removal delivery goes through normally")
+finally:
+    arl._extract_student_state = orig_extract
+    arl._call_with_tools = orig_call
+    _tools.verify_plan = orig_verify
+
+
 # --- Part 3: without a previous plan, gap-fill still works normally ---
 print("--- first turn: gap-fill unaffected ---")
 arl._extract_student_state = fake_extract

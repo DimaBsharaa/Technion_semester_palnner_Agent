@@ -222,7 +222,12 @@ the new information actually breaks - but "keep the rest" NEVER means \
 keeping the specific problem the student complained about. A student who \
 reports one exam conflict expects the offending course swapped, not a \
 completely different plan - call verify_plan on your minimally-changed \
-version first, before considering anything more drastic."""
+version first, before considering anything more drastic. One hard limit on \
+revisions: a required RETAKE is never dropped to satisfy feedback the \
+student didn't aim at it - if the complaint (e.g. an exam-date conflict) \
+lands on the retake itself and no alternative section or date exists, keep \
+the retake and disclose the conflict as unavoidable; only an explicit \
+"remove <that course>" from the student justifies dropping it."""
 
     return {
         "role": "system",
@@ -609,6 +614,7 @@ def run_agent_turn_v2(
     persistent_issue_pushed = False
     sport_padding_pushed = False
     removal_pushed = False
+    retake_dropped_pushed = False
     choice_group_pushed = False
     issues_pushed = 0
     stopped_reason = "step_limit_exhausted"
@@ -850,6 +856,50 @@ def run_agent_turn_v2(
                                 f"({', '.join(sport)}) - the limit is ONE. Replace the extras with real "
                                 "courses from the available-courses shortlist (substantive electives or "
                                 "remaining requirements), verify the new list, and deliver that."
+                            ),
+                        }
+                    )
+                    continue
+
+                # Retake-dropped pushback: a failed course the student did
+                # NOT ask to remove is missing from the delivery. Priority
+                # rule #1 (a failed course is retaken now) lived only in the
+                # prompt, and under revision pressure ("I have a conflict on
+                # that exam date") the model was observed live silently
+                # dropping the retake to satisfy the request. One shot: send
+                # it back with the dropped course(s) named - reinstate and
+                # rebalance, or deliver anyway with the omission explained
+                # honestly. Second delivery stands (the honest-disclosure
+                # explanation rules already cover it). Only fires for
+                # courses actually offered next semester - a retake that
+                # cannot be taken at all is a legitimate omission.
+                dropped_retakes = [
+                    c for c in failed
+                    if c not in candidate
+                    and c not in requested_removals
+                    and track.courses.get(c, {}).get("offered_next_semester")
+                ]
+                if dropped_retakes and not retake_dropped_pushed and step < MAX_STEPS - 1:
+                    retake_dropped_pushed = True
+                    dropped_names = ", ".join(
+                        f"{c} ({track.courses[c]['name']})" for c in dropped_retakes if c in track.courses
+                    )
+                    tool_log.append(
+                        {"name": "retake_dropped_pushback", "args": {}, "result": {"dropped": dropped_retakes}}
+                    )
+                    react_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": (
+                                f"Not delivered: this plan drops the student's required retake {dropped_names}, "
+                                "which the student never asked to remove. A failed course is retaken NOW - "
+                                "priority rule #1 - and it is never dropped just to resolve an exam-date or "
+                                "schedule complaint; an unavoidable conflict on the retake itself is disclosed "
+                                "honestly instead. Reinstate it, rebalance the rest if needed, verify the new "
+                                "list and deliver that. Only if the retake genuinely cannot be taken this "
+                                "semester may you deliver without it - and then your explanation must say "
+                                "exactly why, in plain language."
                             ),
                         }
                     )
