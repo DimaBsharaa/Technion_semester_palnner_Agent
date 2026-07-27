@@ -32,6 +32,9 @@ def test_health() -> list[str]:
     if status != 200:
         failures.append(f"/health returned {status}, expected 200")
         return failures
+    if not isinstance(data, dict):
+        failures.append(f"/health returned non-JSON body: {data!r}")
+        return failures
     if data.get("status") != "ok":
         failures.append(f"/health status field: {data.get('status')!r}, expected 'ok'")
     if data.get("agent_mode_default") != "react":
