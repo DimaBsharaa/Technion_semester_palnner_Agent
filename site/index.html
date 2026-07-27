@@ -158,8 +158,12 @@
   .msg-tool.pass { border-color: var(--grn); }
   .msg-tool.fail { border-color: var(--red); }
   .msg-system-note { align-self: center; font-size: .8rem; color: var(--mut); font-style: italic; }
-  #specRunner { margin: 6px 14px 0; padding: 8px 12px; border: 1px dashed rgba(120,130,160,.45);
-    border-radius: 12px; background: var(--glass); }
+  #specRunner { margin: 6px 14px 0; padding: 4px 12px; border: 1px dashed rgba(120,130,160,.35);
+    border-radius: 12px; background: transparent; }
+  #specRunner[open] { padding: 8px 12px; background: var(--glass); border-color: rgba(120,130,160,.45); }
+  #specRunner > summary { cursor: pointer; user-select: none; font-size: .72rem; color: var(--mut);
+    font-weight: 600; letter-spacing: .02em; }
+  #specRunner[open] > summary { margin-bottom: 8px; }
   .spec-row { display: flex; gap: 8px; align-items: center; }
   .spec-tag { font-size: .68rem; font-weight: 800; letter-spacing: .06em; color: var(--blue-ink);
     border: 1px solid var(--blue); border-radius: 6px; padding: 2px 6px; white-space: nowrap; }
@@ -693,17 +697,18 @@
   <span class="budget" id="budget">session cost: $0.0000</span>
 </header>
 
-<section id="specRunner">
+<details id="specRunner">
+  <summary>⚡ Run Agent — one-shot API mode (POST /api/execute)</summary>
   <div class="spec-row">
     <span class="spec-tag">API</span>
-    <textarea id="specPrompt" rows="1" placeholder="One-shot prompt to the agent (POST /api/execute) — e.g. 'I'm starting semester 4, passed everything, no Sundays, normal pace'"></textarea>
+    <textarea id="specPrompt" rows="1" placeholder="One-shot prompt to the agent — e.g. 'I'm starting semester 4, passed everything, no Sundays, normal pace'"></textarea>
     <button id="specRun">Run Agent</button>
   </div>
   <div id="specResult" style="display:none">
     <div id="specResponse"></div>
     <div id="specSteps"></div>
   </div>
-</section>
+</details>
 
 <div id="log"></div>
 
