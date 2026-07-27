@@ -21,12 +21,12 @@ from datetime import date
 from data_bundle import Track, _bottom_categories, _leaf_courses
 from prereq_parser import collect_prereq_courses
 
-DEFAULT_MIN_CREDITS = 18  # 18 is the target load for a normal-pace semester; a bit above is fine
-DEFAULT_MAX_CREDITS = 22
+DEFAULT_MIN_CREDITS = 16  # 18 is the target load for a normal-pace semester; a bit above is fine
+DEFAULT_MAX_CREDITS = 24
 LIGHT_PACE_MIN_CREDITS = 14  # a student who explicitly asks for "light" gets a lower floor...
 LIGHT_PACE_MAX_CREDITS = 18  # ...and a lower ceiling too, never above the normal target
 DEFAULT_MIN_EXAM_GAP_DAYS = 3
-DEFAULT_WORKLOAD_CAP = 75  # 0-100 scale; see _workload_score
+DEFAULT_WORKLOAD_CAP = 80  # 0-100 scale; see _workload_score
 DEFAULT_MIN_MANDATORY_COURSES = 3  # a semester carrying only 1-2 mandatory courses wastes a term
 
 # CheeseFork's difficultyRank is 1-5; bucket boundaries for summarize_cheesefork.
