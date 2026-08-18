@@ -12,7 +12,8 @@ has a leveled test plan with exact prompts to try.
 
 ## Setup (5 minutes)
 
-Requirements: Python 3.11+, `pip install fastapi uvicorn openai`.
+Requirements: Python 3.11+, `pip install fastapi uvicorn openai pdfplumber python-multipart`
+(the last two are for transcript-PDF upload — see `agent/requirements.txt`).
 
 1. **API key:** copy the template and paste the shared course (LLMod) key —
    ask Manhal for it, it is deliberately not in the repo:
@@ -46,12 +47,16 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
 | Path | What it is |
 |---|---|
 | `agent/agent_react_loop.py` | **The agent** — the bounded tool-choosing loop and its guards |
-| `agent/tools.py` | All 15 tools (pure Python, no AI inside) - incl. the weekly-schedule and exam-study analyzers |
+| `agent/tools.py` | 15 model-callable tools (pure Python, no AI inside) - incl. the weekly-schedule and exam-study analyzers, plus `suggest_grade_improvements` (preinjected, not model-callable - see `docs/enhancement-checklist.md` item 2) |
 | `agent/agent_loop.py` | Understanding/extraction + shared helpers + legacy pipeline (fallback) |
-| `agent/main.py` | Web server: `/chat`, `/chat/stream` (live steps), `/tracks`, `/health` |
+| `agent/student_store.py` | Supabase-backed session persistence, keyed by hashed student email (item 3) |
+| `agent/transcript_parser.py` | Parses an uploaded Technion transcript PDF into courses/grades (item 1) |
+| `agent/live_offering_check.py` | Real-time "is this course still offered" check on the final candidates, right before delivery |
+| `agent/main.py` | Web server — see its own docstring for the full endpoint list: `/chat`, `/chat/stream`, `/transcript`, `/session`, `/tracks`, `/health`, plus the course-spec-required `/api/*` endpoints |
 | `agent/tests/` | Automated checks + live scenario suite |
 | `site/index.html` | The whole website — one file, no build step |
-| `pipeline/` | Offline data fetching (Technion SAP API + CheeseFork) |
+| `pipeline/` | Offline data fetching (Technion SAP API + CheeseFork + technion-histograms) |
+| `pipeline/backfill_grade_stats.py` | One-off patch script that added `grade_stats` to the already-committed `data/track_*.json` bundles |
 | `data/track_*.json` | Packaged per-track course bundles the server loads |
 
 ## Notes
@@ -76,3 +81,23 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
   inherent consequence of the spec's no-auth requirement, not a bug in the
   implementation - documented here so it's a known, accepted trade-off
   rather than something discovered later.
+- **Transcript upload (optional):** a student can upload their official
+  Technion transcript PDF instead of clicking through the course checklist -
+  see `POST /transcript`, `agent/transcript_parser.py`. Never stores the raw
+  PDF or its extracted text anywhere; only course numbers, pass/fail, and
+  grades survive, and those only ever live in memory for the request unless
+  `student_key` is also set (in which case they're saved the same way any
+  other resolved state is - see above).
+- **Grade-improvement suggestions:** when a student's own grade in a passed
+  course is known (from the transcript, or just mentioned in chat) and is
+  notably below that course's historical average (`technion-histograms`, see
+  `pipeline/histogram_client.py`), the agent may mention it as a labeled,
+  dismissible retake suggestion. Never auto-added to a plan, never claimed
+  as guaranteed-eligible under Technion's actual grade-improvement policy -
+  see `docs/enhancement-checklist.md` item 2 for the full reasoning.
+- **Live course-offering check:** right before delivering a plan, the agent
+  makes one real-time check against Technion's own system to confirm the
+  final candidate courses are still actually offered - `data/track_*.json`
+  is a snapshot, only refreshed when someone reruns the pipeline; this
+  catches a course that changed in between. Fails open (never blocks
+  delivery on a network hiccup) - see `agent/live_offering_check.py`.

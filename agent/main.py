@@ -295,15 +295,17 @@ def chat(request: ChatRequest):
         _persist_session(request.track_id, request.student_key, result)
         return result
     except Exception as e:
-        # TEMPORARY: surface the real error for local debugging. Remove
-        # before this is ever reachable from outside localhost - a
-        # traceback shouldn't be handed to arbitrary callers.
-        import traceback
+        # The traceback is genuinely useful for local debugging, but must
+        # never reach an arbitrary caller of a deployed, public endpoint.
+        # Vercel sets VERCEL=1 in every deployed environment (local `uvicorn`
+        # runs never have it), so this stays convenient locally and safe in
+        # production with no manual flag to remember to flip.
+        content = {"error": str(e)}
+        if not os.environ.get("VERCEL"):
+            import traceback
 
-        return JSONResponse(
-            status_code=500,
-            content={"error": str(e), "traceback": traceback.format_exc()},
-        )
+            content["traceback"] = traceback.format_exc()
+        return JSONResponse(status_code=500, content=content)
 
 
 @app.post("/chat/stream")
