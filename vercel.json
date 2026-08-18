@@ -5,8 +5,5 @@
       "maxDuration": 300,
       "includeFiles": "{agent,data,site}/**"
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
-  ]
+  }
 }
