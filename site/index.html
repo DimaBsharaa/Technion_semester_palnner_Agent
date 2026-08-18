@@ -802,6 +802,15 @@
 <div id="trackSelectForm" class="card intake-form">
   <span class="role-label">Which track are you in?</span>
   <div class="toggle-group" id="trackToggle">Loading tracks…</div>
+  <!-- Optional cross-device restore: not auth (no password, nothing is
+       verified) - just a lookup key. Explicit action, not auto-fired on
+       load, so a network call to /session only happens when the student
+       actually wants a restore. See sha256hex + tryRestoreByEmail below. -->
+  <div id="restoreRow" style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+    <input id="restoreEmail" type="email" placeholder="Technion email (optional) — restore a saved plan" spellcheck="false" style="flex:1; min-width:220px; padding:8px 10px; border-radius:8px; border:1px solid var(--edge); background:var(--card); color:var(--ink); font-family:inherit;">
+    <button id="restoreBtn" type="button" class="quick-chip">Restore my last session</button>
+  </div>
+  <div id="restoreNote" style="display:none; font-size:.85em; margin-top:4px; color:var(--mut);"></div>
 </div>
 
 <!-- Shown only after the student has already spoken and the agent found
@@ -829,6 +838,16 @@
     <label class="intake-label">
       Required courses you should have finished by now - defaults to "Passed", flip any exception to "Failed"
     </label>
+    <!-- Optional: parse a real transcript PDF instead of clicking through the
+         checklist below - uses the exact same intake.passed_courses/
+         failed_courses fields either way, just from ground truth instead of
+         a manual guess. Fully optional; the checklist stays available. -->
+    <div id="transcriptUploadRow" style="display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+      <label for="transcriptFile" class="quick-chip" style="cursor:pointer;">Upload transcript (PDF)</label>
+      <input id="transcriptFile" type="file" accept="application/pdf" style="display:none;">
+      <span style="font-size:.85em; color:var(--mut);">or fill in manually below</span>
+    </div>
+    <div id="transcriptNote" style="display:none; font-size:.85em; margin-bottom:8px;"></div>
     <div id="courseChecklist" class="course-checklist">Loading course list…</div>
   </div>
 
@@ -953,6 +972,36 @@ function saveSession(planResult) {
 }
 function loadSession() {
   try { return JSON.parse(localStorage.getItem('planner_session') || 'null'); } catch { return null; }
+}
+
+// SHA-256 hex digest via the browser's built-in crypto - no new dependency.
+// Used only to derive studentKey from an email; the plaintext email itself
+// is never sent to the backend.
+async function sha256hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Shared by both restore paths: the existing same-browser localStorage
+// "Continue where you left off" flow, and the new cross-device
+// email-lookup flow (GET /session). Tolerates both payload shapes - the
+// localStorage blob is camelCase (trackId, costUsd, ...), the Supabase-
+// sourced one is snake_case (matches the Python dict main.py builds) -
+// rather than normalizing one into the other server-side.
+function applyRestoredSession(saved) {
+  selectedTrackId = saved.trackId || saved.track_id;
+  messages = saved.messages || [];
+  costUsd = saved.costUsd ?? saved.cost_usd ?? 0;
+  knownContext = saved.knownContext || saved.known_context || null;
+  document.getElementById('headerTrack').textContent = saved.trackName || saved.track_name || '';
+  document.getElementById('trackSelectForm').style.display = 'none';
+  document.getElementById('composer').style.display = 'flex';
+  budgetEl.textContent = `session cost: $${costUsd.toFixed(4)}`;
+  intakeOptionsPromise = loadIntakeOptionsBackground();
+  const plan = saved.lastPlanResult || saved.plan_result;
+  if (plan) renderPlanResult(plan);
+  inputEl.focus();
 }
 
 // ===== Export: .ics calendar =====
@@ -1128,6 +1177,19 @@ let costUsd = 0;
 // message ("I have a wedding on an exam date") revise the existing plan
 // instead of the agent re-deriving everything and drafting a new one.
 let knownContext = null;
+// SHA-256 hex hash of the student's email, set only when they've typed one
+// in - the raw email itself never leaves the browser. When set, every
+// chat turn also gets saved server-side (Supabase) so it can be restored
+// on a different browser/device later via GET /session. This is a lookup
+// key, not authentication: nothing about it is verified, so treat it as
+// obfuscation against casual exposure, not access control.
+let studentKey = null;
+// Set when a transcript PDF was successfully parsed this gap-fill turn
+// (see the #transcriptFile handler below) - {passed_courses, failed_courses,
+// grades}. When present, gapSubmit uses this instead of the manual
+// courseStatus checklist - the transcript's full course list, not just
+// this track's mandatory ones. Reset on every fresh gap-fill panel render.
+let transcriptData = null;
 
 function addCard(className, labelText, bodyEl) {
   const card = document.createElement('div');
@@ -1889,6 +1951,9 @@ async function postChatStream(body) {
 }
 
 async function handleChatData(data) {
+  if (data.recalled_profile) {
+    addSystemNote('Found saved info for this email from an earlier session — reusing what I already know. Say so in your message if anything here is wrong.');
+  }
   messages = data.messages;
   costUsd = data.cost_usd;
   // What the student had BEFORE this turn - captured before overwrite, so
@@ -1937,7 +2002,7 @@ async function send() {
   showAgentWorking();
 
   try {
-    await postChat({ track_id: selectedTrackId, messages, cost_usd: costUsd, known_context: knownContext });
+    await postChat({ track_id: selectedTrackId, messages, cost_usd: costUsd, known_context: knownContext, student_key: studentKey });
   } catch (err) {
     addSystemNote(`Error talking to the backend: ${err.message}. Is it running at ${backendUrlEl.value}?`);
   } finally {
@@ -2010,6 +2075,14 @@ function showWelcome() {
 
 async function selectTrack(track) {
   selectedTrackId = track.track_id;
+  // If the student already typed an email (even without clicking Restore -
+  // there's nothing to restore on a first-ever visit), start saving THIS
+  // new session server-side from here on.
+  const email = document.getElementById('restoreEmail').value.trim();
+  if (email) {
+    studentKey = await sha256hex(email.toLowerCase());
+    try { localStorage.setItem('planner_email', email); } catch {}
+  }
   document.getElementById('headerTrack').textContent = track.name;
   document.getElementById('trackSelectForm').style.display = 'none';
   document.getElementById('composer').style.display = 'flex';
@@ -2125,6 +2198,46 @@ async function loadIntakeOptionsBackground() {
   }
 }
 
+// Optional alternative to the manual course checklist: parse a real
+// transcript PDF server-side (POST /transcript, see transcript_parser.py)
+// instead of clicking through every mandatory course by hand. On success,
+// hides the checklist (transcriptData now wins in gapSubmit below) and
+// shows a short confirmation; on failure, leaves the checklist as the
+// fallback - this is purely additive, never required.
+document.getElementById('transcriptFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const note = document.getElementById('transcriptNote');
+  const checklist = document.getElementById('courseChecklist');
+  if (!file) return;
+
+  note.style.display = 'block';
+  note.style.color = 'var(--mut)';
+  note.textContent = 'Reading transcript…';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(`${backendUrlEl.value}/transcript`, { method: 'POST', body: formData });
+    const data = await response.json();
+    if (data.found) {
+      transcriptData = { passed_courses: data.passed_courses, failed_courses: data.failed_courses, grades: data.grades };
+      checklist.style.display = 'none';
+      note.style.color = 'var(--mut)';
+      note.textContent = `Found ${data.passed_courses.length} passed, ${data.failed_courses.length} failed course(s) from the transcript - used instead of the checklist.`;
+    } else {
+      transcriptData = null;
+      checklist.style.display = '';
+      note.style.color = '#c0392b';
+      note.textContent = data.error || "Couldn't read that PDF - fill in the checklist below instead.";
+    }
+  } catch (err) {
+    transcriptData = null;
+    checklist.style.display = '';
+    note.style.color = '#c0392b';
+    note.textContent = `Error uploading: ${err.message}`;
+  }
+});
+
 // Called whenever a /chat response comes back with a non-null needs_input:
 // shows only the gap sections the agent couldn't infer from free text,
 // pre-seeded with whatever it already extracted so the student never has
@@ -2144,6 +2257,12 @@ async function renderGapFillPanel(needsInput) {
   selectedPace = (knownState.constraints && knownState.constraints.pace) || 'normal';
   touchedCourses = new Set();
   courseStatus = {};
+  // A transcript parsed on an EARLIER gap-fill turn shouldn't silently
+  // reapply here - each turn starts fresh, same as courseStatus above.
+  transcriptData = null;
+  document.getElementById('transcriptFile').value = '';
+  document.getElementById('transcriptNote').style.display = 'none';
+  document.getElementById('courseChecklist').style.display = '';
   for (const c of knownState.passed_courses || []) courseStatus[c] = 'passed';
   for (const c of knownState.failed_courses || []) courseStatus[c] = 'failed';
 
@@ -2170,19 +2289,23 @@ document.getElementById('gapSubmit').addEventListener('click', async () => {
     semester_number: missing.has('semester_number') ? selectedSemester : knownState.semester_number,
     excluded_weekdays: missing.has('weekdays') ? Array.from(selectedWeekdays) : (knownConstraints.excluded_weekdays || []),
     pace: missing.has('pace') ? selectedPace : (knownConstraints.pace || 'normal'),
+    // transcriptData wins when present - the FULL list from the PDF, not
+    // filtered to this track's mandatory courses like the manual checklist
+    // is (see the #transcriptFile handler and transcript_parser.py).
     passed_courses: missing.has('courses')
-      ? Object.entries(courseStatus).filter(([, v]) => v === 'passed').map(([c]) => c)
+      ? (transcriptData ? transcriptData.passed_courses : Object.entries(courseStatus).filter(([, v]) => v === 'passed').map(([c]) => c))
       : (knownState.passed_courses || []),
     failed_courses: missing.has('courses')
-      ? Object.entries(courseStatus).filter(([, v]) => v === 'failed').map(([c]) => c)
+      ? (transcriptData ? transcriptData.failed_courses : Object.entries(courseStatus).filter(([, v]) => v === 'failed').map(([c]) => c))
       : (knownState.failed_courses || []),
+    grades: (transcriptData && transcriptData.grades) || knownState.grades || {},
     override_minimums: knownConstraints.override_minimums || false,
   };
 
   document.getElementById('gapFillPanel').style.display = 'none';
   showAgentWorking();
   try {
-    await postChat({ track_id: selectedTrackId, messages, cost_usd: costUsd, intake, known_context: knownContext });
+    await postChat({ track_id: selectedTrackId, messages, cost_usd: costUsd, intake, known_context: knownContext, student_key: studentKey });
   } catch (err) {
     addSystemNote(`Error talking to the backend: ${err.message}. Is it running at ${backendUrlEl.value}?`);
   } finally {
@@ -2255,17 +2378,7 @@ function offerRestore(saved) {
   cont.addEventListener('click', () => {
     tick();
     el.remove();
-    selectedTrackId = saved.trackId;
-    messages = saved.messages || [];
-    costUsd = saved.costUsd || 0;
-    knownContext = saved.knownContext || null;
-    document.getElementById('headerTrack').textContent = saved.trackName || '';
-    document.getElementById('trackSelectForm').style.display = 'none';
-    document.getElementById('composer').style.display = 'flex';
-    budgetEl.textContent = `session cost: $${costUsd.toFixed(4)}`;
-    intakeOptionsPromise = loadIntakeOptionsBackground();
-    if (saved.lastPlanResult) renderPlanResult(saved.lastPlanResult);
-    inputEl.focus();
+    applyRestoredSession(saved);
   });
   const fresh = document.createElement('button');
   fresh.className = 'quick-chip';
@@ -2282,6 +2395,49 @@ function offerRestore(saved) {
   el.appendChild(chips);
   logEl.appendChild(el);
 }
+
+// Explicit action only - deliberately NOT auto-fired on load from a
+// stored flag. A GET /session lookup only happens when the student
+// actually clicks this, so cross-device restore is opt-in, not a silent
+// background check on every visit.
+document.getElementById('restoreBtn').addEventListener('click', async () => {
+  const emailInput = document.getElementById('restoreEmail');
+  const note = document.getElementById('restoreNote');
+  const btn = document.getElementById('restoreBtn');
+  const email = emailInput.value.trim();
+  note.style.display = 'none';
+  if (!email) {
+    note.textContent = 'Enter your Technion email first.';
+    note.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = 'Checking…';
+  try {
+    const hash = await sha256hex(email.toLowerCase());
+    const response = await fetch(`${backendUrlEl.value}/session?student_key=${hash}`);
+    const data = await response.json();
+    if (data.found) {
+      studentKey = hash;
+      try { localStorage.setItem('planner_email', email); } catch {}
+      applyRestoredSession(data.session);
+    } else {
+      note.textContent = 'No saved session found for that email — pick a track below to start a new one.';
+      note.style.display = 'block';
+    }
+  } catch (err) {
+    note.textContent = `Couldn't check for a saved session: ${err.message}`;
+    note.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+});
+try {
+  const savedEmail = localStorage.getItem('planner_email');
+  if (savedEmail) document.getElementById('restoreEmail').value = savedEmail;
+} catch {}
 
 applyStaticHebrew();
 injectHeaderToggles();

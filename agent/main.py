@@ -18,12 +18,21 @@ GET /intake-options?track_id=...
   mandatory course list (with prerequisite depth, for smart "probably passed
   by now" defaults), weekday labels, and pace options.
 
+POST /transcript
+  multipart/form-data, field "file": a Technion transcript PDF. Returns
+  {"found": true, "passed_courses": [...], "failed_courses": [...],
+  "grades": {course_number: int}} on success, or {"found": false, "error":
+  "..."} on anything unreadable - never a 500, never a traceback. See
+  transcript_parser.py. The frontend folds a successful result straight
+  into a normal `intake` submission below, in place of the manual course
+  checklist.
+
 POST /chat
   body: {"track_id": "...", "messages": [...], "cost_usd": 0.0, "intake": null}
     - track_id: which track (from GET /tracks) this conversation is for.
     - messages: plain {"role": "user"|"assistant", "content": ...} history
-      (the caller keeps it, since there's no server-side session store); on
-      the very first call this should just be
+      (the caller keeps it - see student_key below for the one optional
+      exception); on the very first call this should just be
       [{"role": "user", "content": "<what the student said>"}]. No system
       message needed - each internal step builds its own.
     - cost_usd: running total from the previous response, echoed back so the
@@ -34,7 +43,26 @@ POST /chat
       entirely for this turn - the single least reliable step in the whole
       pipeline, skipped whenever the frontend can just ask directly instead
       of an LLM guessing at typed text.
+    - student_key: optional SHA-256 hex hash of a student's email, computed
+      client-side (the server never sees the raw email). When present, this
+      turn's resolved state is also saved to Supabase (student_store.py) so
+      GET /session can restore it later on a different browser/device. This
+      is a lookup key, not authentication - see README.md's "Session
+      persistence" note for the honest security boundary. Omit entirely for
+      the original fully-stateless behavior (still the default).
+      Also: when a caller sends student_key but no known_context (a brand
+      new conversation), the server checks for a previously saved profile
+      under that key and seeds known_context from it automatically
+      (_recall_known_context) - so a returning student doesn't need to
+      re-state facts they already gave in an earlier conversation, on any
+      device. The response then carries "recalled_profile": true.
   response: {"messages": [...], "cost_usd": ..., "tool_log": [...], "stopped_reason": ...}
+
+GET /session?student_key=...
+  Look up a previously saved conversation/plan by the same hash described
+  above. {"found": false} if nothing's saved (or Supabase isn't configured,
+  or the lookup fails for any reason) - never an error; a student who never
+  saved a session just sees "not found," same as never having used the app.
 """
 
 import json
@@ -43,12 +71,14 @@ import queue
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
+import student_store
 import tools
+import transcript_parser
 from agent_loop import (
     build_state_from_intake,
     get_llm_trace,
@@ -106,6 +136,83 @@ class ChatRequest(BaseModel):
     # follow-up message is treated as a revision of the existing plan
     # rather than a from-scratch request.
     known_context: dict | None = None
+    # Optional: SHA-256 hex digest of the student's email, computed
+    # CLIENT-SIDE (the server never sees the raw email - see
+    # site/index.html's sha256hex + student_store.py). When present, this
+    # turn's resolved state is also saved to Supabase so GET /session can
+    # restore it on a different browser/device. Purely additive: omit it
+    # and behavior is identical to before this existed.
+    student_key: str | None = None
+
+
+def _persist_session(track_id: str, student_key: str | None, result: dict) -> None:
+    """Best-effort save of this turn's resolved state to Supabase (see
+    student_store.py) so a later GET /session on another browser/device can
+    restore it - the server-side counterpart to site/index.html's
+    `planner_session` localStorage blob, not a replacement for it. No-op
+    whenever student_key is absent or Supabase isn't configured; never
+    raises - a Supabase hiccup must never affect the response the student
+    actually gets."""
+    if not student_key:
+        return
+    student_store.save_session(
+        student_key,
+        {
+            "track_id": track_id,
+            "track_name": get_track(track_id).name,
+            "schema_version": AGENT_VERSION,
+            "messages": result.get("messages"),
+            "cost_usd": result.get("cost_usd"),
+            "known_context": result.get("known_context"),
+            "plan_result": result.get("plan_result"),
+        },
+    )
+
+
+def _recall_known_context(track_id: str, student_key: str | None) -> dict | None:
+    """Best-effort pull of a returning student's saved facts into the exact
+    known_context shape run_agent_turn already understands - so a BRAND-NEW
+    conversation (new device, cleared browser, or just "hi" a week later)
+    gets the same deterministic carry-forward guarantee merge_known_state
+    already gives an ordinary same-session revision turn, instead of
+    starting cold and re-asking things this student already answered.
+
+    Only ever called by the /chat handlers when the caller sent no
+    known_context of its own - i.e. strictly the first turn of a fresh
+    conversation; an ongoing conversation is never overridden by this.
+
+    state (passed/failed/constraints) carries over regardless of track -
+    Technion course numbers are global. previous_plan/previous_issues/
+    previous_explanation only carry over when the saved row's track_id
+    matches the one requested now - a plan built for a different degree
+    track isn't a valid revision baseline for this one.
+
+    Never raises - same posture as student_store's own functions; a
+    Supabase hiccup or a malformed saved row must never break the turn,
+    just silently look like "nothing saved yet"."""
+    if not student_key:
+        return None
+    try:
+        saved = student_store.load_session(student_key)
+        if not saved:
+            return None
+        saved_context = saved.get("known_context") or {}
+        state = saved_context.get("state")
+        if not state:
+            return None
+        recalled = {
+            "state": state,
+            "previous_plan": None,
+            "previous_issues": [],
+            "previous_explanation": None,
+        }
+        if saved.get("track_id") == track_id:
+            recalled["previous_plan"] = saved_context.get("previous_plan")
+            recalled["previous_issues"] = saved_context.get("previous_issues") or []
+            recalled["previous_explanation"] = (saved.get("plan_result") or {}).get("explanation")
+        return recalled
+    except Exception:
+        return None
 
 
 @app.get("/tracks")
@@ -116,6 +223,29 @@ def tracks():
 @app.get("/intake-options")
 def intake_options(track_id: str):
     return tools.get_intake_options(get_track(track_id))
+
+
+@app.post("/transcript")
+async def transcript(file: UploadFile):
+    """Parses an uploaded Technion transcript PDF (see transcript_parser.py)
+    into passed_courses/failed_courses/grades - the frontend folds this
+    straight into a normal `intake` submission on /chat, same as the manual
+    course checklist. Optional, additive: a student without the PDF just
+    uses the checklist instead, unaffected by this endpoint's existence.
+
+    Deliberately a generic error message on failure, never a traceback -
+    unlike /chat's TEMPORARY debug behavior, this endpoint handles
+    PII-adjacent content (a transcript's header carries a name and Technion
+    ID, even though this parser never returns them) and must not risk
+    echoing back a fragment of parsed text in an error."""
+    try:
+        result = transcript_parser.parse_transcript_pdf(await file.read())
+        return {"found": True, **result}
+    except Exception:
+        return {
+            "found": False,
+            "error": "Could not read course rows from this PDF - you can enter courses manually instead.",
+        }
 
 
 @app.post("/chat")
@@ -143,14 +273,26 @@ def chat(request: ChatRequest):
 
     try:
         start_llm_trace()
+        known_context = request.known_context or _recall_known_context(request.track_id, request.student_key)
         result = implementation(
             request.track_id,
             messages,
             request.cost_usd,
             state_override=state_override,
-            known_context=request.known_context,
+            known_context=known_context,
         )
         result["llm_steps"] = get_llm_trace()
+        if known_context is not None and request.known_context is None:
+            result["recalled_profile"] = True
+            result.setdefault("tool_log", []).insert(
+                0,
+                {
+                    "name": "recall_student_profile",
+                    "args": {},
+                    "result": {"found": True, "same_track": bool(known_context.get("previous_plan"))},
+                },
+            )
+        _persist_session(request.track_id, request.student_key, result)
         return result
     except Exception as e:
         # TEMPORARY: surface the real error for local debugging. Remove
@@ -187,15 +329,27 @@ def chat_stream(request: ChatRequest):
     def worker():
         try:
             start_llm_trace()  # thread-local: must start inside the worker
+            known_context = request.known_context or _recall_known_context(request.track_id, request.student_key)
             result = run_agent_turn_v2(
                 request.track_id,
                 messages,
                 request.cost_usd,
                 state_override=state_override,
-                known_context=request.known_context,
+                known_context=known_context,
                 on_event=on_event,
             )
             result["llm_steps"] = get_llm_trace()
+            if known_context is not None and request.known_context is None:
+                result["recalled_profile"] = True
+                result.setdefault("tool_log", []).insert(
+                    0,
+                    {
+                        "name": "recall_student_profile",
+                        "args": {},
+                        "result": {"found": True, "same_track": bool(known_context.get("previous_plan"))},
+                    },
+                )
+            _persist_session(request.track_id, request.student_key, result)
             events.put({"type": "result", "data": result})
         except Exception as e:
             events.put({"type": "error", "error": str(e)})
@@ -211,6 +365,20 @@ def chat_stream(request: ChatRequest):
             yield json.dumps(item, ensure_ascii=False) + "\n"
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@app.get("/session")
+def get_session(student_key: str):
+    """Restore a previously saved conversation/plan on a fresh browser or a
+    different device, keyed by the SHA-256 hash of the student's email (see
+    site/index.html's "Restore my last session" flow and student_store.py).
+    Never errors on a missing/invalid key or a Supabase hiccup - a student
+    who never saved a session, or whose lookup fails for any reason, just
+    sees "not found," same as if they'd never used the app before."""
+    saved = student_store.load_session(student_key)
+    if saved is None:
+        return {"found": False}
+    return {"found": True, "session": saved}
 
 
 @app.get("/health")

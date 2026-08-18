@@ -33,6 +33,14 @@ DEFAULT_MIN_MANDATORY_COURSES = 3  # a semester carrying only 1-2 mandatory cour
 _LIGHT_MAX = 2.5
 _MEDIUM_MAX = 3.75
 
+# How far below a course's historical average grade (technion-histograms)
+# counts as "notably below peers" for suggest_grade_improvements - a
+# statistical judgment call, NOT a claim about Technion's actual
+# grade-improvement (שיפור ציון) retake-eligibility policy, which has its
+# own rules this codebase doesn't implement or verify. See that function's
+# docstring before changing this.
+GRADE_IMPROVEMENT_GAP_THRESHOLD = 10
+
 
 def search_courses(track: Track, query: str) -> list[dict]:
     """Looks up course numbers by (partial) name or by number, so the agent
@@ -284,6 +292,44 @@ def summarize_cheesefork(track: Track, course_numbers: list[str]) -> dict:
             "sample_reviews": cf.get("sample_reviews", []),
         }
     return result
+
+
+def suggest_grade_improvements(track: Track, passed_courses: list[str], grades: dict) -> list[dict]:
+    """Flags a passed course as a CANDIDATE (never a requirement, never
+    added to any plan) for a grade-improvement retake, when the student's
+    own grade is notably below that course's historical average
+    (technion-histograms, see pipeline/histogram_client.py).
+
+    Advisory only. Technion's real grade-improvement policy (שיפור ציון)
+    has its own eligibility rules - which courses qualify, how many
+    attempts are allowed, which grade counts, time limits - that are NOT
+    implemented or verified here. Never claim guaranteed eligibility; the
+    caller (the system prompt) is responsible for framing this as a
+    dismissible suggestion, not a rule the agent applied.
+
+    Silently skips (not an error) any course with no known grade or no
+    historical grade_stats - most electives won't have both, and that's
+    the expected common case, not a failure."""
+    out = []
+    for c in passed_courses:
+        grade = grades.get(c)
+        if grade is None or c not in track.courses:
+            continue
+        stats = track.courses[c].get("grade_stats")
+        if not stats:
+            continue
+        gap = stats["avg_grade"] - grade
+        if gap >= GRADE_IMPROVEMENT_GAP_THRESHOLD:
+            out.append(
+                {
+                    "course_number": c,
+                    "name": track.courses[c]["name"],
+                    "your_grade": grade,
+                    "course_average": stats["avg_grade"],
+                    "gap": round(gap, 1),
+                }
+            )
+    return out
 
 
 def _workload_score(track: Track, course_numbers: list[str]) -> float:

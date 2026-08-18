@@ -1,8 +1,9 @@
 """
 Fetches everything the planning agent's tools need for one degree track:
 its requirement tree, full details for every course referenced anywhere in
-that tree (regardless of faculty), CheeseFork difficulty data, and the
-reverse-prerequisite graph - and writes it all to one consolidated JSON file.
+that tree (regardless of faculty), CheeseFork difficulty data,
+technion-histograms grade stats, and the reverse-prerequisite graph - and
+writes it all to one consolidated JSON file.
 
 Usage:
     python3 fetch_track_bundle.py --faculty "הפקולטה למדעי הנתונים וההחלטות" \\
@@ -73,6 +74,7 @@ def main():
     parser.add_argument("--cache-dir", default=str(Path(__file__).parent.parent / ".cache"))
     parser.add_argument("--no-cache", action="store_true")
     parser.add_argument("--no-cheesefork", action="store_true", help="Skip fetching CheeseFork reviews (faster iteration)")
+    parser.add_argument("--no-histograms", action="store_true", help="Skip fetching technion-histograms grade stats (faster iteration)")
     args = parser.parse_args()
 
     if not args.no_cache:
@@ -112,6 +114,15 @@ def main():
             if i % 25 == 0 or i == len(courses):
                 print(f"  {i}/{len(courses)}")
             courses[course_number]["cheesefork"] = cf.get_course_feedback(course_number)
+
+    if not args.no_histograms:
+        import histogram_client as hc
+
+        print("Fetching technion-histograms grade stats...")
+        for i, course_number in enumerate(courses, 1):
+            if i % 25 == 0 or i == len(courses):
+                print(f"  {i}/{len(courses)}")
+            courses[course_number]["grade_stats"] = hc.get_grade_stats(course_number)
 
     print("Building reverse-prerequisite graph...")
     reverse_prereqs: dict[str, list[str]] = {c: [] for c in courses}

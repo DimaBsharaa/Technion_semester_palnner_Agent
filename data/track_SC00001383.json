@@ -14,6 +14,12 @@
       "course_number": "00140318",
       "exams": {},
       "faculty": "הפקולטה להנדסה אזרחית וסביבתית",
+      "grade_stats": {
+        "avg_grade": 83.6,
+        "median_grade": 85.0,
+        "semester": "202002",
+        "student_count": 57
+      },
       "info_semester": "2026_200",
       "name": "קיימות ויזמות סביבתית בעידן הטכנולוגי",
       "no_additional_credit_with": [],
@@ -62,6 +68,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 78.4,
+        "median_grade": 81.0,
+        "semester": "202501",
+        "student_count": 49
+      },
       "info_semester": "2026_200",
       "name": "מבוא להנדסת תעשיה וניהול",
       "no_additional_credit_with": [
@@ -122,6 +134,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 68.8,
+        "median_grade": 68.0,
+        "semester": "202501",
+        "student_count": 41
+      },
       "info_semester": "2026_200",
       "name": "תפעול מער' ייצור ושרות",
       "no_additional_credit_with": [],
@@ -190,6 +208,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 87.3,
+        "median_grade": 88.0,
+        "semester": "202501",
+        "student_count": 41
+      },
       "info_semester": "2026_200",
       "name": "שיטות בהנדסת תעשיה",
       "no_additional_credit_with": [],
@@ -243,6 +267,12 @@
       "course_number": "00940189",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 91.2,
+        "median_grade": 90.0,
+        "semester": "202501",
+        "student_count": 14
+      },
       "info_semester": "2026_200",
       "name": "קדם פרויקט תכן, הנדסת תעו\"נ",
       "no_additional_credit_with": [
@@ -315,6 +345,12 @@
       "course_number": "00940198",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 85.6,
+        "median_grade": 88.0,
+        "semester": "202102",
+        "student_count": 11
+      },
       "info_semester": "2026_200",
       "name": "אירועים בהנדסת תעשיה",
       "no_additional_credit_with": [],
@@ -365,6 +401,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 63.9,
+        "median_grade": 65.0,
+        "semester": "202501",
+        "student_count": 92
+      },
       "info_semester": "2026_200",
       "name": "הנדסת תוכנה",
       "no_additional_credit_with": [
@@ -454,6 +496,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 80.5,
+        "median_grade": 82.0,
+        "semester": "202501",
+        "student_count": 205
+      },
       "info_semester": "2026_200",
       "name": "מבני נתונים ואלגוריתמים",
       "no_additional_credit_with": [
@@ -584,6 +632,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 79.4,
+        "median_grade": 82.0,
+        "semester": "202501",
+        "student_count": 137
+      },
       "info_semester": "2026_200",
       "name": "ניהול מסדי נתונים",
       "no_additional_credit_with": [
@@ -731,6 +785,12 @@
       "course_number": "00940290",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 93.5,
+        "median_grade": 93.5,
+        "semester": "202501",
+        "student_count": 100
+      },
       "info_semester": "2026_200",
       "name": "מעבדה באיסוף וניהול נתונים",
       "no_additional_credit_with": [],
@@ -781,6 +841,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 71.8,
+        "median_grade": 74.5,
+        "semester": "202501",
+        "student_count": 123
+      },
       "info_semester": "2026_200",
       "name": "מודלים דטרמיניסטים בחקר ביצועים",
       "no_additional_credit_with": [
@@ -901,6 +967,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 67.5,
+        "median_grade": 66.0,
+        "semester": "202502",
+        "student_count": 151
+      },
       "info_semester": "2026_200",
       "name": "מודלים סטוכסטיים בחקר בצועים",
       "no_additional_credit_with": [
@@ -1035,6 +1107,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 68.6,
+        "median_grade": 68.0,
+        "semester": "202101",
+        "student_count": 78
+      },
       "info_semester": "2026_200",
       "name": "מתמטיקה דיסקרטית",
       "no_additional_credit_with": [
@@ -1128,6 +1206,12 @@
       "course_number": "00940395",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 90.2,
+        "median_grade": 90.5,
+        "semester": "202401",
+        "student_count": 62
+      },
       "info_semester": "2026_200",
       "name": "קדם פרויקט תכן, הנדסת מ\"מ",
       "no_additional_credit_with": [
@@ -1217,6 +1301,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 68.2,
+        "median_grade": 70.0,
+        "semester": "202501",
+        "student_count": 132
+      },
       "info_semester": "2026_200",
       "name": "הסתברות ת'",
       "no_additional_credit_with": [
@@ -1324,6 +1414,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 78.7,
+        "median_grade": 80.0,
+        "semester": "202501",
+        "student_count": 379
+      },
       "info_semester": "2026_200",
       "name": "הסתברות מ",
       "no_additional_credit_with": [
@@ -1528,6 +1624,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 77.5,
+        "median_grade": 80.0,
+        "semester": "202501",
+        "student_count": 19
+      },
       "info_semester": "2026_200",
       "name": "מבוא לסטטיסטיקה",
       "no_additional_credit_with": [
@@ -1673,6 +1775,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 71.8,
+        "median_grade": 69.0,
+        "semester": "202502",
+        "student_count": 30
+      },
       "info_semester": "2026_200",
       "name": "סטטיסטיקה 1",
       "no_additional_credit_with": [
@@ -1807,6 +1915,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 82.2,
+        "median_grade": 84.0,
+        "semester": "202501",
+        "student_count": 96
+      },
       "info_semester": "2026_200",
       "name": "מבוא להסתברות וסטטיסטיקה",
       "no_additional_credit_with": [
@@ -1917,6 +2031,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 76.1,
+        "median_grade": 78.5,
+        "semester": "202201",
+        "student_count": 22
+      },
       "info_semester": "2026_200",
       "name": "מיקרו כלכלה 2",
       "no_additional_credit_with": [],
@@ -1977,6 +2097,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 73.4,
+        "median_grade": 73.0,
+        "semester": "202201",
+        "student_count": 60
+      },
       "info_semester": "2026_200",
       "name": "מאקרו כלכלה",
       "no_additional_credit_with": [],
@@ -2045,6 +2171,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 72.2,
+        "median_grade": 72.5,
+        "semester": "202501",
+        "student_count": 144
+      },
       "info_semester": "2026_200",
       "name": "מבוא לניהול פיננסי",
       "no_additional_credit_with": [
@@ -2150,6 +2282,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 84.1,
+        "median_grade": 84.0,
+        "semester": "202501",
+        "student_count": 55
+      },
       "info_semester": "2026_200",
       "name": "שוק ההון וההשקעות",
       "no_additional_credit_with": [],
@@ -2210,6 +2348,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 81.8,
+        "median_grade": 85.0,
+        "semester": "202502",
+        "student_count": 150
+      },
       "info_semester": "2026_200",
       "name": "מבוא לכלכלה",
       "no_additional_credit_with": [
@@ -2355,6 +2499,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 67.1,
+        "median_grade": 65.0,
+        "semester": "202501",
+        "student_count": 107
+      },
       "info_semester": "2026_200",
       "name": "עקרונות הכלכלה למהנדסים",
       "no_additional_credit_with": [
@@ -2446,6 +2596,12 @@
       "course_number": "00940700",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 76.7,
+        "median_grade": 79.0,
+        "semester": "202402",
+        "student_count": 119
+      },
       "info_semester": "2026_200",
       "name": "מבוא להנדסת נתונים",
       "no_additional_credit_with": [
@@ -2502,6 +2658,12 @@
       "course_number": "00940701",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 97.1,
+        "median_grade": 98.0,
+        "semester": "202201",
+        "student_count": 34
+      },
       "info_semester": "2026_200",
       "name": "פרויקט מחקרי 1",
       "no_additional_credit_with": [
@@ -2539,6 +2701,7 @@
       "course_number": "00940702",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "פרויקט מחקרי 2",
       "no_additional_credit_with": [
@@ -2578,6 +2741,7 @@
       "course_number": "00940703",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "פרויקט מחקרי 3",
       "no_additional_credit_with": [
@@ -2630,6 +2794,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 72.0,
+        "median_grade": 75.0,
+        "semester": "202501",
+        "student_count": 61
+      },
       "info_semester": "2026_200",
       "name": "סדנת תכנות בשפת סי",
       "no_additional_credit_with": [],
@@ -2686,6 +2856,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 89.8,
+        "median_grade": 93.0,
+        "semester": "201801",
+        "student_count": 13
+      },
       "info_semester": "2026_200",
       "name": "חשבונאות ניהולית מתקדמת",
       "no_additional_credit_with": [],
@@ -2746,6 +2922,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 90.4,
+        "median_grade": 83.0,
+        "semester": "202401",
+        "student_count": 11
+      },
       "info_semester": "2026_200",
       "name": "דיני מסים ומקרקעין",
       "no_additional_credit_with": [],
@@ -2781,6 +2963,12 @@
       "course_number": "00950111",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 82.5,
+        "median_grade": 84.5,
+        "semester": "202002",
+        "student_count": 12
+      },
       "info_semester": "2026_200",
       "name": "תכן מערכות ייצור",
       "no_additional_credit_with": [
@@ -2852,6 +3040,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 86.1,
+        "median_grade": 89.0,
+        "semester": "202402",
+        "student_count": 101
+      },
       "info_semester": "2026_200",
       "name": "מבוא לפסיכולוגיה",
       "no_additional_credit_with": [
@@ -2920,6 +3114,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 90.7,
+        "median_grade": 91.0,
+        "semester": "202501",
+        "student_count": 28
+      },
       "info_semester": "2026_200",
       "name": "הנדסת איכות",
       "no_additional_credit_with": [
@@ -2992,6 +3192,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 80.3,
+        "median_grade": 84.0,
+        "semester": "202501",
+        "student_count": 185
+      },
       "info_semester": "2026_200",
       "name": "יסודות בינה מלאכותית וישומיה",
       "no_additional_credit_with": [
@@ -3114,6 +3320,12 @@
       "course_number": "00960226",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 91.3,
+        "median_grade": 96.0,
+        "semester": "202002",
+        "student_count": 17
+      },
       "info_semester": "2026_200",
       "name": "חישוב, תורת המשחקים וכלכלה",
       "no_additional_credit_with": [],
@@ -3172,6 +3384,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 80.7,
+        "median_grade": 81.0,
+        "semester": "202501",
+        "student_count": 171
+      },
       "info_semester": "2026_200",
       "name": "מערכות מידע מבוזרות",
       "no_additional_credit_with": [],
@@ -3297,6 +3515,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 89.4,
+        "median_grade": 91.0,
+        "semester": "202501",
+        "student_count": 126
+      },
       "info_semester": "2026_200",
       "name": "גורמי אנוש בדאטא",
       "no_additional_credit_with": [],
@@ -3417,6 +3641,7 @@
       "course_number": "00960311",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "תיאוריה ואלגוריתמים לאופטימיזציה",
       "no_additional_credit_with": [
@@ -3479,6 +3704,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 82.6,
+        "median_grade": 83.6,
+        "semester": "202502",
+        "student_count": 93
+      },
       "info_semester": "2026_200",
       "name": "למידה חישובית 1",
       "no_additional_credit_with": [
@@ -3607,6 +3838,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 83.6,
+        "median_grade": 82.5,
+        "semester": "202501",
+        "student_count": 20
+      },
       "info_semester": "2026_200",
       "name": "סטטיסטיקה תעשייתית",
       "no_additional_credit_with": [
@@ -3669,6 +3906,12 @@
       "course_number": "00960425",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 82.8,
+        "median_grade": 91.0,
+        "semester": "202401",
+        "student_count": 160
+      },
       "info_semester": "2026_200",
       "name": "סדרות עתיות וחיזוי",
       "no_additional_credit_with": [],
@@ -3796,6 +4039,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 86.1,
+        "median_grade": 91.0,
+        "semester": "202202",
+        "student_count": 11
+      },
       "info_semester": "2026_200",
       "name": "השוואות מרובות",
       "no_additional_credit_with": [],
@@ -3843,6 +4092,12 @@
       "course_number": "00960475",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 95.6,
+        "median_grade": 96.0,
+        "semester": "202501",
+        "student_count": 55
+      },
       "info_semester": "2026_200",
       "name": "תכנון ניסויים וניתוחם",
       "no_additional_credit_with": [],
@@ -3902,6 +4157,12 @@
       "course_number": "00960553",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 89.9,
+        "median_grade": 94.0,
+        "semester": "201801",
+        "student_count": 17
+      },
       "info_semester": "2026_200",
       "name": "כלכלת סביבה",
       "no_additional_credit_with": [],
@@ -3979,6 +4240,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 69.5,
+        "median_grade": 69.5,
+        "semester": "202501",
+        "student_count": 204
+      },
       "info_semester": "2026_200",
       "name": "תורת המשחקים והתנהגות כלכלית",
       "no_additional_credit_with": [
@@ -4079,6 +4346,12 @@
       "course_number": "00960578",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 83.1,
+        "median_grade": 85.0,
+        "semester": "202301",
+        "student_count": 35
+      },
       "info_semester": "2026_200",
       "name": "בחירה חברתית והחלטות משותפות",
       "no_additional_credit_with": [],
@@ -4218,6 +4491,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 85.9,
+        "median_grade": 87.5,
+        "semester": "202401",
+        "student_count": 31
+      },
       "info_semester": "2026_200",
       "name": "התנהגות ארגונית",
       "no_additional_credit_with": [
@@ -4285,6 +4564,12 @@
       "course_number": "00960609",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 94.0,
+        "median_grade": 96.0,
+        "semester": "202301",
+        "student_count": 14
+      },
       "info_semester": "2026_200",
       "name": "מודלים כמותיים במדעי ההתנהגות",
       "no_additional_credit_with": [
@@ -4327,6 +4612,12 @@
       "course_number": "00960807",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 89.7,
+        "median_grade": 90.0,
+        "semester": "202501",
+        "student_count": 38
+      },
       "info_semester": "2026_200",
       "name": "יזמות חברתית",
       "no_additional_credit_with": [
@@ -4387,6 +4678,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 83.5,
+        "median_grade": 85.0,
+        "semester": "202501",
+        "student_count": 189
+      },
       "info_semester": "2026_200",
       "name": "למידה חישובית 2",
       "no_additional_credit_with": [
@@ -4520,6 +4817,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 87.7,
+        "median_grade": 89.0,
+        "semester": "202402",
+        "student_count": 115
+      },
       "info_semester": "2026_200",
       "name": "עיבוד שפה טבעית",
       "no_additional_credit_with": [
@@ -4599,6 +4902,12 @@
       "course_number": "00970217",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 96.7,
+        "median_grade": 97.0,
+        "semester": "202501",
+        "student_count": 35
+      },
       "info_semester": "2026_200",
       "name": "סמינר בעיבוד שפה טבעית",
       "no_additional_credit_with": [],
@@ -4667,6 +4976,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 82.0,
+        "median_grade": 84.0,
+        "semester": "202501",
+        "student_count": 45
+      },
       "info_semester": "2026_200",
       "name": "תורת המשחקים השיתופיים",
       "no_additional_credit_with": [
@@ -4728,6 +5043,12 @@
       "course_number": "00970325",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 91.4,
+        "median_grade": 98.0,
+        "semester": "202401",
+        "student_count": 16
+      },
       "info_semester": "2026_200",
       "name": "תיאוריה ושיטות באופטימיזציה דלילה",
       "no_additional_credit_with": [],
@@ -4789,6 +5110,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 91.3,
+        "median_grade": 92.0,
+        "semester": "202201",
+        "student_count": 61
+      },
       "info_semester": "2026_200",
       "name": "מבוא להסקה סיבתית",
       "no_additional_credit_with": [],
@@ -4849,6 +5176,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 79.7,
+        "median_grade": 81.0,
+        "semester": "202402",
+        "student_count": 203
+      },
       "info_semester": "2026_200",
       "name": "מבוא לחישוביות וסיבוכיות",
       "no_additional_credit_with": [
@@ -4925,6 +5258,7 @@
       "course_number": "00980291",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "פרקטיקום (התנסות מעשית) בארגונים",
       "no_additional_credit_with": [],
@@ -4968,6 +5302,7 @@
       "course_number": "00980331",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "תכנות לינארי וקומבינטורי",
       "no_additional_credit_with": [
@@ -5034,6 +5369,7 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "תהליכים סטוכסטיים",
       "no_additional_credit_with": [],
@@ -5101,6 +5437,12 @@
         ]
       },
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": {
+        "avg_grade": 92.5,
+        "median_grade": 93.0,
+        "semester": "202301",
+        "student_count": 17
+      },
       "info_semester": "2026_200",
       "name": "איסוף נתונים ומחקר במדעי ההתנהגות",
       "no_additional_credit_with": [],
@@ -5146,6 +5488,7 @@
       "course_number": "00980663",
       "exams": {},
       "faculty": "הפקולטה למדעי הנתונים וההחלטות",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "סמינר בהתנהגות צרכנים",
       "no_additional_credit_with": [],
@@ -5193,6 +5536,12 @@
       "course_number": "01140032",
       "exams": {},
       "faculty": "הפקולטה לפיזיקה",
+      "grade_stats": {
+        "avg_grade": 85.4,
+        "median_grade": 88.0,
+        "semester": "202501",
+        "student_count": 105
+      },
       "info_semester": "2026_200",
       "name": "מעבדה לפיסיקה 1ח'",
       "no_additional_credit_with": [],
@@ -5371,6 +5720,12 @@
         ]
       },
       "faculty": "הפקולטה לפיזיקה",
+      "grade_stats": {
+        "avg_grade": 71.4,
+        "median_grade": 72.0,
+        "semester": "202502",
+        "student_count": 419
+      },
       "info_semester": "2026_200",
       "name": "פיסיקה 2",
       "no_additional_credit_with": [
@@ -5620,6 +5975,12 @@
         ]
       },
       "faculty": "הפקולטה לפיזיקה",
+      "grade_stats": {
+        "avg_grade": 85.5,
+        "median_grade": 88.0,
+        "semester": "202501",
+        "student_count": 207
+      },
       "info_semester": "2026_200",
       "name": "פיסיקה 3",
       "no_additional_credit_with": [
@@ -5760,6 +6121,12 @@
         ]
       },
       "faculty": "הפקולטה לפיזיקה",
+      "grade_stats": {
+        "avg_grade": 69.3,
+        "median_grade": 72.0,
+        "semester": "202502",
+        "student_count": 366
+      },
       "info_semester": "2026_200",
       "name": "פיסיקה 2ממ",
       "no_additional_credit_with": [
@@ -5903,6 +6270,12 @@
         ]
       },
       "faculty": "הפקולטה לכימיה",
+      "grade_stats": {
+        "avg_grade": 73.5,
+        "median_grade": 73.0,
+        "semester": "202501",
+        "student_count": 241
+      },
       "info_semester": "2026_200",
       "name": "יסודות הכימיה",
       "no_additional_credit_with": [
@@ -6190,6 +6563,12 @@
         ]
       },
       "faculty": "הפקולטה לכימיה",
+      "grade_stats": {
+        "avg_grade": 82.5,
+        "median_grade": 85.0,
+        "semester": "202501",
+        "student_count": 89
+      },
       "info_semester": "2026_200",
       "name": "כימיה פיסיקלית",
       "no_additional_credit_with": [
@@ -6338,6 +6717,12 @@
         ]
       },
       "faculty": "הפקולטה לכימיה",
+      "grade_stats": {
+        "avg_grade": 73.5,
+        "median_grade": 75.0,
+        "semester": "202501",
+        "student_count": 768
+      },
       "info_semester": "2026_200",
       "name": "כימיה כללית",
       "no_additional_credit_with": [
@@ -6640,6 +7025,12 @@
       "course_number": "01250013",
       "exams": {},
       "faculty": "הפקולטה לכימיה",
+      "grade_stats": {
+        "avg_grade": 94.3,
+        "median_grade": 95.0,
+        "semester": "202402",
+        "student_count": 119
+      },
       "info_semester": "2026_200",
       "name": "מעבדה בכימיה כללית",
       "no_additional_credit_with": [
@@ -6735,6 +7126,12 @@
         ]
       },
       "faculty": "הפקולטה לביולוגיה",
+      "grade_stats": {
+        "avg_grade": 82.6,
+        "median_grade": 87.0,
+        "semester": "202501",
+        "student_count": 115
+      },
       "info_semester": "2026_200",
       "name": "גנטיקה כללית",
       "no_additional_credit_with": [
@@ -6886,6 +7283,12 @@
         ]
       },
       "faculty": "הפקולטה לביולוגיה",
+      "grade_stats": {
+        "avg_grade": 82.2,
+        "median_grade": 88.0,
+        "semester": "202501",
+        "student_count": 744
+      },
       "info_semester": "2026_200",
       "name": "ביולוגיה 1",
       "no_additional_credit_with": [
@@ -6995,6 +7398,7 @@
       "course_number": "02070953",
       "exams": {},
       "faculty": "הפקולטה לארכיטקטורה ובינוי ערים",
+      "grade_stats": null,
       "info_semester": "2026_200",
       "name": "תכנון וניהול הסביבה החופית והימית",
       "no_additional_credit_with": [],
@@ -7032,6 +7436,12 @@
       "course_number": "02140119",
       "exams": {},
       "faculty": "חינוך למדע וטכנולוגיה",
+      "grade_stats": {
+        "avg_grade": 97.6,
+        "median_grade": 100.0,
+        "semester": "202501",
+        "student_count": 29
+      },
       "info_semester": "2026_200",
       "name": "למידה והור.מדעים והנ.בחינוך גבוה",
       "no_additional_credit_with": [],
@@ -7079,6 +7489,12 @@
       "course_number": "02140120",
       "exams": {},
       "faculty": "חינוך למדע וטכנולוגיה",
+      "grade_stats": {
+        "avg_grade": 99.8,
+        "median_grade": 100.0,
+        "semester": "202501",
+        "student_count": 120
+      },
       "info_semester": "2026_200",
       "name": "יסודות למידה והוראה",
       "no_additional_credit_with": [
@@ -7126,6 +7542,12 @@
       "course_number": "02160003",
       "exams": {},
       "faculty": "חינוך למדע וטכנולוגיה",
+      "grade_stats": {
+        "avg_grade": 97.0,
+        "median_grade": 97.0,
+        "semester": "202301",
+        "student_count": 16
+      },
       "info_semester": "2026_200",
       "name": "מוח וחינוך - לקויות למידה בילדים",
       "no_additional_credit_with": [],
@@ -7174,6 +7596,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 88.0,
+        "median_grade": 88.0,
+        "semester": "202501",
+        "student_count": 47
+      },
       "info_semester": "2026_200",
       "name": "פילוסופיה של בינה מלאכותית",
       "no_additional_credit_with": [],
@@ -7211,6 +7639,12 @@
       "course_number": "03240032",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 88.5,
+        "median_grade": 90.0,
+        "semester": "202502",
+        "student_count": 54
+      },
       "info_semester": "2026_200",
       "name": "אנגלית למתקדמים א'",
       "no_additional_credit_with": [
@@ -7310,6 +7744,12 @@
       "course_number": "03240033",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 91.9,
+        "median_grade": 93.0,
+        "semester": "202501",
+        "student_count": 260
+      },
       "info_semester": "2026_200",
       "name": "אנגלית טכנית-מתקדמים ב'",
       "no_additional_credit_with": [
@@ -7528,6 +7968,12 @@
       "course_number": "03240236",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 100.0,
+        "median_grade": 100.0,
+        "semester": "202501",
+        "student_count": 17
+      },
       "info_semester": "2026_200",
       "name": "תזמורת נשיפה",
       "no_additional_credit_with": [],
@@ -7576,6 +8022,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 91.0,
+        "median_grade": 93.0,
+        "semester": "202401",
+        "student_count": 46
+      },
       "info_semester": "2026_200",
       "name": "תולדות הפילוסופיה והמדע בעת החדשה",
       "no_additional_credit_with": [],
@@ -7634,6 +8086,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 94.5,
+        "median_grade": 96.0,
+        "semester": "202501",
+        "student_count": 49
+      },
       "info_semester": "2026_200",
       "name": "מבוא להאזנה מודרכת-ענקי הפסנתר",
       "no_additional_credit_with": [],
@@ -7682,6 +8140,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 93.5,
+        "median_grade": 94.0,
+        "semester": "202301",
+        "student_count": 55
+      },
       "info_semester": "2026_200",
       "name": "סוקרטס וממשיכיו",
       "no_additional_credit_with": [],
@@ -7730,6 +8194,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 94.5,
+        "median_grade": 94.0,
+        "semester": "202502",
+        "student_count": 47
+      },
       "info_semester": "2026_200",
       "name": "פוליטיקה של זהויות בישראל",
       "no_additional_credit_with": [],
@@ -7778,6 +8248,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 96.5,
+        "median_grade": 96.0,
+        "semester": "202102",
+        "student_count": 71
+      },
       "info_semester": "2026_200",
       "name": "מוסיקה טכנולוגית",
       "no_additional_credit_with": [],
@@ -7826,6 +8302,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 89.8,
+        "median_grade": 91.0,
+        "semester": "202502",
+        "student_count": 77
+      },
       "info_semester": "2026_200",
       "name": "משפט שוויון וצדק חברתי",
       "no_additional_credit_with": [],
@@ -7874,6 +8356,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 97.7,
+        "median_grade": 100.0,
+        "semester": "202501",
+        "student_count": 74
+      },
       "info_semester": "2026_200",
       "name": "מן התנ\"ך ועד למשפט הישראלי החדשני",
       "no_additional_credit_with": [],
@@ -7922,6 +8410,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 91.1,
+        "median_grade": 94.5,
+        "semester": "202502",
+        "student_count": 12
+      },
       "info_semester": "2026_200",
       "name": "היסטוריה של המדע",
       "no_additional_credit_with": [],
@@ -7970,6 +8464,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 94.1,
+        "median_grade": 95.0,
+        "semester": "202501",
+        "student_count": 163
+      },
       "info_semester": "2026_200",
       "name": "סוגיות בפילוסופיה של מדעי החיים-לרפואנים בלבד",
       "no_additional_credit_with": [],
@@ -8018,6 +8518,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 99.4,
+        "median_grade": 100.0,
+        "semester": "202502",
+        "student_count": 74
+      },
       "info_semester": "2026_200",
       "name": "יסודות באמנות יפן",
       "no_additional_credit_with": [
@@ -8068,6 +8574,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 87.0,
+        "median_grade": 88.0,
+        "semester": "202302",
+        "student_count": 23
+      },
       "info_semester": "2026_200",
       "name": "פרקים נבחרים בתולדות האמנות",
       "no_additional_credit_with": [],
@@ -8116,6 +8628,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 87.7,
+        "median_grade": 88.0,
+        "semester": "202502",
+        "student_count": 44
+      },
       "info_semester": "2026_200",
       "name": "משפט העבודה בישראל",
       "no_additional_credit_with": [
@@ -8166,6 +8684,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.8,
+        "median_grade": 96.0,
+        "semester": "202501",
+        "student_count": 82
+      },
       "info_semester": "2026_200",
       "name": "הסתגלות למצבי לחץ",
       "no_additional_credit_with": [],
@@ -8214,6 +8738,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 96.1,
+        "median_grade": 100.0,
+        "semester": "202501",
+        "student_count": 51
+      },
       "info_semester": "2026_200",
       "name": "אתיקה: יסודות, נורמה ויישום",
       "no_additional_credit_with": [],
@@ -8251,6 +8781,12 @@
       "course_number": "03240518",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 94.3,
+        "median_grade": 95.0,
+        "semester": "202501",
+        "student_count": 71
+      },
       "info_semester": "2026_200",
       "name": "חדשנות, יצירתיות ואושר",
       "no_additional_credit_with": [],
@@ -8288,6 +8824,12 @@
       "course_number": "03240520",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 90.0,
+        "median_grade": 95.0,
+        "semester": "202401",
+        "student_count": 59
+      },
       "info_semester": "2026_200",
       "name": "יזמות עסקית",
       "no_additional_credit_with": [
@@ -8327,6 +8869,12 @@
       "course_number": "03240521",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 90.5,
+        "median_grade": 89.0,
+        "semester": "202502",
+        "student_count": 47
+      },
       "info_semester": "2026_200",
       "name": "יזמות בארגונים-התפתחויות ומגמות",
       "no_additional_credit_with": [
@@ -8366,6 +8914,12 @@
       "course_number": "03240527",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 91.4,
+        "median_grade": 93.5,
+        "semester": "202501",
+        "student_count": 64
+      },
       "info_semester": "2026_200",
       "name": "יסודות היזמות",
       "no_additional_credit_with": [],
@@ -8423,6 +8977,12 @@
       "course_number": "03240528",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 90.4,
+        "median_grade": 90.0,
+        "semester": "202502",
+        "student_count": 121
+      },
       "info_semester": "2026_200",
       "name": "מנהיגות יזמית",
       "no_additional_credit_with": [],
@@ -8481,6 +9041,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 94.3,
+        "median_grade": 95.0,
+        "semester": "202501",
+        "student_count": 90
+      },
       "info_semester": "2026_200",
       "name": "הייטק בישראל: כיצד להוביל עולמית",
       "no_additional_credit_with": [],
@@ -8518,6 +9084,12 @@
       "course_number": "03240539",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 90.6,
+        "median_grade": 89.0,
+        "semester": "202401",
+        "student_count": 57
+      },
       "info_semester": "2026_200",
       "name": "מחקרי שוק",
       "no_additional_credit_with": [],
@@ -8566,6 +9138,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 96.6,
+        "median_grade": 96.0,
+        "semester": "202502",
+        "student_count": 23
+      },
       "info_semester": "2026_200",
       "name": "ספרדית למתחילים",
       "no_additional_credit_with": [],
@@ -8613,6 +9191,12 @@
       "course_number": "03240697",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.1,
+        "median_grade": 95.0,
+        "semester": "202403",
+        "student_count": 16
+      },
       "info_semester": "2026_200",
       "name": "עקרונות מעשיים לעיבוד תמונה",
       "no_additional_credit_with": [],
@@ -8661,6 +9245,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 88.0,
+        "median_grade": 89.0,
+        "semester": "202501",
+        "student_count": 44
+      },
       "info_semester": "2026_200",
       "name": "תולדות הצילום:מהלשכה האפלה לסמרטפון",
       "no_additional_credit_with": [],
@@ -8697,6 +9287,12 @@
       "course_number": "03250001",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 97.1,
+        "median_grade": 97.5,
+        "semester": "202402",
+        "student_count": 20
+      },
       "info_semester": "2026_200",
       "name": "סטודיו אומן בקמפוס 1",
       "no_additional_credit_with": [
@@ -8738,6 +9334,12 @@
       "course_number": "03250005",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 93.7,
+        "median_grade": 95.0,
+        "semester": "202502",
+        "student_count": 54
+      },
       "info_semester": "2026_200",
       "name": "יזמות מפי היזמים",
       "no_additional_credit_with": [],
@@ -8786,6 +9388,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 93.1,
+        "median_grade": 97.0,
+        "semester": "202502",
+        "student_count": 57
+      },
       "info_semester": "2026_200",
       "name": "מדע דת ופילוסופיה",
       "no_additional_credit_with": [],
@@ -8834,6 +9442,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.7,
+        "median_grade": 96.0,
+        "semester": "202402",
+        "student_count": 76
+      },
       "info_semester": "2026_200",
       "name": "נושאים נבחרים באתיקה 2",
       "no_additional_credit_with": [],
@@ -8882,6 +9496,12 @@
         ]
       },
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 92.2,
+        "median_grade": 94.0,
+        "semester": "202501",
+        "student_count": 55
+      },
       "info_semester": "2026_200",
       "name": "תיאוריות אנתרופולוגיות",
       "no_additional_credit_with": [],
@@ -8919,6 +9539,12 @@
       "course_number": "03940582",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 90.9,
+        "median_grade": 100.0,
+        "semester": "202401",
+        "student_count": 11
+      },
       "info_semester": "2026_200",
       "name": "תזמורת",
       "no_additional_credit_with": [],
@@ -8956,6 +9582,12 @@
       "course_number": "03940587",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 96.2,
+        "median_grade": 96.0,
+        "semester": "202502",
+        "student_count": 21
+      },
       "info_semester": "2026_200",
       "name": "מקהלה אורטורית",
       "no_additional_credit_with": [
@@ -8995,6 +9627,12 @@
       "course_number": "03940800",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.1,
+        "median_grade": 96.0,
+        "semester": "202502",
+        "student_count": 50
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - כושר בנים",
       "no_additional_credit_with": [
@@ -9023,6 +9661,12 @@
       "course_number": "03940801",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 97.0,
+        "median_grade": 98.0,
+        "semester": "202502",
+        "student_count": 328
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - התעמלות כללית בנות",
       "no_additional_credit_with": [
@@ -9051,6 +9695,12 @@
       "course_number": "03940802",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 96.4,
+        "median_grade": 97.0,
+        "semester": "202502",
+        "student_count": 360
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - שחיה",
       "no_additional_credit_with": [
@@ -9079,6 +9729,12 @@
       "course_number": "03940803",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.7,
+        "median_grade": 97.0,
+        "semester": "202502",
+        "student_count": 561
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - משחקי כדור",
       "no_additional_credit_with": [
@@ -9107,6 +9763,12 @@
       "course_number": "03940804",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.9,
+        "median_grade": 97.0,
+        "semester": "202502",
+        "student_count": 376
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - משחקי מחבט",
       "no_additional_credit_with": [
@@ -9135,6 +9797,12 @@
       "course_number": "03940805",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 98.2,
+        "median_grade": 99.0,
+        "semester": "202502",
+        "student_count": 467
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - אתלטיקה קלה",
       "no_additional_credit_with": [
@@ -9163,6 +9831,12 @@
       "course_number": "03940806",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 97.1,
+        "median_grade": 98.0,
+        "semester": "202502",
+        "student_count": 211
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - הגנה עצמית",
       "no_additional_credit_with": [
@@ -9191,6 +9865,12 @@
       "course_number": "03940807",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 96.9,
+        "median_grade": 98.0,
+        "semester": "202501",
+        "student_count": 209
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני מעורב",
       "no_additional_credit_with": [
@@ -9225,6 +9905,12 @@
       "course_number": "03940808",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 95.6,
+        "median_grade": 95.5,
+        "semester": "202502",
+        "student_count": 80
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני-מיועד לסטודנטים חדשים",
       "no_additional_credit_with": [
@@ -9255,6 +9941,12 @@
       "course_number": "03940820",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 97.0,
+        "median_grade": 98.0,
+        "semester": "202502",
+        "student_count": 165
+      },
       "info_semester": "2026_200",
       "name": "חינוך גופני - תנועה ומחול",
       "no_additional_credit_with": [
@@ -9284,6 +9976,12 @@
       "course_number": "03940902",
       "exams": {},
       "faculty": "המחלקה ללימודים הומניסטיים ואמנות",
+      "grade_stats": {
+        "avg_grade": 99.0,
+        "median_grade": 100.0,
+        "semester": "202502",
+        "student_count": 278
+      },
       "info_semester": "2026_200",
       "name": "נבחרות ספורט",
       "no_additional_credit_with": [

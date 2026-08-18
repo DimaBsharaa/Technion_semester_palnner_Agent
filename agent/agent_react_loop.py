@@ -41,6 +41,7 @@ plan).
 import json
 import os
 
+import live_offering_check
 import tools
 from agent_loop import (
     BASE_URL,
@@ -183,7 +184,28 @@ def _system_prompt(
     previous_plan: list[str] | None = None,
     previous_issues: set[str] | None = None,
     requested_removals: list[str] | None = None,
+    previous_explanation: str | None = None,
+    grade_suggestions: list[dict] | None = None,
 ) -> dict:
+    grade_suggestions_block = ""
+    if grade_suggestions:
+        grade_suggestions_block = f"""
+Grade-improvement retake candidates (student's own grade vs. this course's \
+historical average, technion-histograms) - ADVISORY ONLY, purely optional \
+context:
+{json.dumps(grade_suggestions, ensure_ascii=False)}
+If, and only if, genuinely relevant to this turn, you MAY mention one \
+briefly in your final explanation as a labeled suggestion the student can \
+ignore - e.g. "your grade in X was N points below the course average, if \
+you're chasing GPA that's worth a look." NEVER add any of these courses to \
+the delivered plan as a retake, and NEVER claim or imply guaranteed \
+eligibility - Technion's actual grade-improvement (שיפור ציון) policy has \
+its own eligibility rules (which courses qualify, attempt limits, time \
+limits) that are not verified here; if you mention this at all, make clear \
+it's worth confirming with the registrar, not a rule you applied. Most \
+turns this is simply not worth mentioning - don't force it in.
+"""
+
     revision_note = ""
     if previous_plan:
         plan_names = [
@@ -209,6 +231,13 @@ def _system_prompt(
                 "whole point of this turn - swap out the involved course(s); carrying the "
                 "issue over unchanged is a failed revision."
             )
+        explanation_note = ""
+        if previous_explanation:
+            explanation_note = (
+                f'\nWhat you told the student when you delivered that plan: "{previous_explanation}"\n'
+                "If they ask what you recommended last time, or why, answer directly from "
+                "this - no tool call needed."
+            )
         revision_note = f"""
 
 IMPORTANT - this is a REVISION, not a fresh request. The student already \
@@ -216,6 +245,7 @@ received this plan in an earlier turn:
 {chr(10).join("- " + n for n in plan_names)}
 {removals_note}
 {issues_note}
+{explanation_note}
 Their latest message is feedback on it. Start from that exact plan: keep \
 every course that still fits the updated constraints, and change ONLY what \
 the new information actually breaks - but "keep the rest" NEVER means \
@@ -312,7 +342,7 @@ Degree requirement audit (per category, what's left):
 Prerequisite-graph analysis of the student's failed/outstanding courses \
 (what each blocks, gateway scores):
 {json.dumps(prereq, ensure_ascii=False)}
-
+{grade_suggestions_block}
 THE COURSE MENU - the ONLY courses the student can take next semester \
 (offered then, prerequisites already met, not yet passed). Every course \
 number in your plan MUST come from this list - there is no other valid \
@@ -443,6 +473,7 @@ def run_agent_turn_v2(
     known_state = (known_context or {}).get("state")
     previous_plan = (known_context or {}).get("previous_plan")
     previous_issues = set((known_context or {}).get("previous_issues") or [])
+    previous_explanation = (known_context or {}).get("previous_explanation")
 
     if state_override is not None:
         state = state_override
@@ -464,7 +495,7 @@ def run_agent_turn_v2(
     # Question turns ("is X hard?") get one grounded answer from the real
     # review data - no planning loop, no gap-fill buttons, plan untouched.
     if state.get("intent") == "question" and state_override is None:
-        answer, c = answer_course_question(track, state, messages)
+        answer, c = answer_course_question(track, state, messages, known_context=known_context)
         cost += c
         tool_log.append(
             {"name": "answer_course_question", "args": {"courses": state.get("question_courses", [])}, "result": {}}
@@ -504,9 +535,11 @@ def run_agent_turn_v2(
                     "constraints": state.get("constraints"),
                     "passed_courses": state.get("passed_courses"),
                     "failed_courses": state.get("failed_courses"),
+                    "grades": state.get("grades", {}),
                 },
                 "previous_plan": previous_plan,
                 "previous_issues": sorted(previous_issues),
+                "previous_explanation": previous_explanation,
             },
         }
 
@@ -529,6 +562,16 @@ def run_agent_turn_v2(
     tool_log.append({"name": "assess_progress", "args": {"preinjected": True}, "result": progress})
     tool_log.append({"name": "fetch_catalog", "args": {"preinjected": True}, "result": catalog})
     tool_log.append({"name": "query_prereq_graph", "args": {"preinjected": True}, "result": prereq})
+
+    # Only computed (and only spends any prompt tokens) when the student has
+    # given at least one grade - the common case is zero grades known, and
+    # this must cost nothing when there's nothing to compare.
+    grade_suggestions = None
+    if state.get("grades"):
+        grade_suggestions = tools.suggest_grade_improvements(track, passed, state["grades"])
+        tool_log.append(
+            {"name": "suggest_grade_improvements", "args": {"preinjected": True}, "result": grade_suggestions}
+        )
 
     available_text = _available_courses_text(track, passed, excluded_weekdays)
 
@@ -556,6 +599,8 @@ def run_agent_turn_v2(
             previous_plan=previous_plan,
             previous_issues=previous_issues,
             requested_removals=requested_removals,
+            previous_explanation=previous_explanation,
+            grade_suggestions=grade_suggestions,
         )
     ]
     # The loop otherwise only sees the condensed extracted state - give it
@@ -1219,6 +1264,30 @@ def run_agent_turn_v2(
                 {"name": "overlap_enforced", "args": {}, "result": {"dropped": dropped_for_overlap}}
             )
 
+    # One last, real-time check against Technion's own live system - the
+    # static data/track_*.json bundle only refreshes when a developer
+    # manually reruns the pipeline, so a course closed/cancelled since then
+    # would otherwise be confidently recommended anyway. Fail-open by
+    # design (live_offering_check.py): a course is only ever dropped when
+    # POSITIVELY confirmed gone, never because the live check itself failed.
+    if final_course_numbers:
+        year_str, semester_str = track.target_semester.split("_")
+        live_status = live_offering_check.check_still_offered(
+            int(year_str), int(semester_str), final_course_numbers
+        )
+        tool_log.append({"name": "live_offering_check", "args": {}, "result": live_status})
+        no_longer_offered = [c for c, offered in live_status.items() if offered is False]
+        if no_longer_offered:
+            final_course_numbers = [c for c in final_course_numbers if c not in no_longer_offered]
+            last_verify_result = tools.verify_plan(
+                track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+            )
+            names = ", ".join(track.courses[c]["name"] for c in no_longer_offered if c in track.courses)
+            final_explanation += (
+                f" Note: {names} was removed - a live check against Technion's system just now shows "
+                "it's no longer offered this semester, even though the cached course data said otherwise."
+            )
+
     verify_result = last_verify_result or {"pass": False, "total_credits": 0, "workload_score": 0, "issues": []}
     exam_dates = tools.fetch_exam_dates(track, final_course_numbers) if final_course_numbers else {}
     cheesefork = tools.summarize_cheesefork(track, final_course_numbers) if final_course_numbers else {}
@@ -1286,11 +1355,17 @@ def run_agent_turn_v2(
                 "constraints": state["constraints"],
                 "passed_courses": passed,
                 "failed_courses": failed,
+                "grades": state.get("grades", {}),
             },
             "previous_plan": final_course_numbers,
             # The delivered plan's open verify issues, so the NEXT turn can
             # deterministically detect "the student complained, and the
             # revised plan still has the exact same problem" and push back.
             "previous_issues": [i["reason"] for i in verify_result.get("issues", [])],
+            # The prose explanation just delivered, so a later turn (same
+            # conversation, or a recalled cross-session profile) can answer
+            # "what did you last recommend?" directly - see previous_explanation
+            # in _system_prompt.
+            "previous_explanation": plan_result.get("explanation"),
         },
     }

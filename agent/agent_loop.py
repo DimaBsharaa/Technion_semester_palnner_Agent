@@ -303,6 +303,13 @@ described their record or mentioned failures alongside it (failures \
 still go in failed_courses either way).
 - "failed_courses": real 8-digit course numbers they said they failed or \
 still need to take.
+- "grades": {{course_number: integer 0-100}} - ONLY when the student \
+explicitly states a numeric grade for a specific course in their message \
+(e.g. "I got an 82 in Data Structures" -> {{"00940224": 82}}). Purely \
+opportunistic: never ask for a grade, never infer one, never put anything \
+grade-related in missing_fields or clarifying_question - a plan can always \
+be built with zero grades known. Omit a course entirely rather than \
+guessing its grade.
 - "remove_courses": real 8-digit course numbers the student explicitly \
 asked to REMOVE, REPLACE, or SWAP OUT of their existing plan in their \
 LATEST message (resolve names to numbers via the catalog above). Empty \
@@ -392,6 +399,7 @@ def _normalize_state(state: dict) -> dict:
     state["passed_courses"] = [str(c).zfill(8) for c in (state.get("passed_courses") or [])]
     state["failed_courses"] = [str(c).zfill(8) for c in (state.get("failed_courses") or [])]
     state["remove_courses"] = [str(c).zfill(8) for c in (state.get("remove_courses") or [])]
+    state["grades"] = {str(c).zfill(8): g for c, g in (state.get("grades") or {}).items()}
     state["intent"] = state.get("intent") if state.get("intent") in ("plan", "question") else "plan"
     state["question_courses"] = [str(c).zfill(8) for c in (state.get("question_courses") or [])]
 
@@ -465,6 +473,12 @@ def merge_known_state(extracted: dict, known_state: dict) -> dict:
     merged["passed_courses"] = sorted(passed)
     merged["failed_courses"] = sorted(failed)
 
+    # Grades never come from LLM extraction (it doesn't produce this field),
+    # so this is really "carry the earlier-known grades forward, let this
+    # turn's intake grades (if any, e.g. a fresh transcript upload) win on
+    # a conflict" - same newest-explicit-wins rule as everything else here.
+    merged["grades"] = {**(known_state.get("grades") or {}), **(merged.get("grades") or {})}
+
     merged["missing_fields"] = []
     merged["ready_to_plan"] = True
     merged["clarifying_question"] = None
@@ -489,6 +503,11 @@ def build_state_from_intake(intake: dict) -> dict:
         },
         "passed_courses": intake.get("passed_courses", []),
         "failed_courses": intake.get("failed_courses", []),
+        # Per-course numeric grade, e.g. from an uploaded transcript
+        # (transcript_parser.py) - optional, not used by any planning logic
+        # today, just carried forward so it survives into known_context and
+        # gets recalled on a later conversation instead of being re-typed.
+        "grades": intake.get("grades", {}),
         "ready_to_plan": True,
         "clarifying_question": None,
     }
@@ -518,13 +537,28 @@ def summarize_intake_as_message(track: Track, state: dict) -> str:
     return " ".join(parts)
 
 
-def answer_course_question(track: Track, state: dict, messages: list[dict]) -> tuple[str, float]:
+def answer_course_question(
+    track: Track, state: dict, messages: list[dict], known_context: dict | None = None
+) -> tuple[str, float]:
     """A question turn ("is X hard?") gets a single grounded answer built
     from the real data in the bundle - crowd difficulty/satisfaction
     numbers and actual review excerpts - instead of spinning up the whole
     planning loop for something that isn't a planning request. Cheap (one
     small call) and honest: the model is told to ground claims in the
-    quoted reviews and admit when the sample is thin."""
+    quoted reviews and admit when the sample is thin.
+
+    Also handles a second kind of question this same intent bucket catches:
+    "what did you recommend last time?" / "why did you pick X?" - a student
+    asking about a PRIOR turn's advice, not a specific course's reviews.
+    Without previous_explanation this function had no way to answer that
+    honestly and would fabricate track-level review stats instead (caught
+    live: asked "what did you recommend last time" with no course named, it
+    invented "80 reviews, 4.6/5" numbers that don't correspond to anything
+    real). previous_explanation - the prose from the last delivered plan,
+    whether from earlier this conversation or a recalled cross-session
+    profile - is threaded in here so the model answers from what it
+    actually said instead of guessing."""
+    previous_explanation = (known_context or {}).get("previous_explanation")
     course_numbers = [c for c in state.get("question_courses", []) if c in track.courses]
     course_blocks = []
     for c in course_numbers:
@@ -548,19 +582,27 @@ def answer_course_question(track: Track, state: dict, messages: list[dict]) -> t
             )
         )
     last_user = next((m for m in reversed(messages) if m.get("role") == "user"), {})
+    previous_explanation_block = (
+        f'\nWhat you told this student when you last delivered a plan: "{previous_explanation}"\n'
+        "If their question is about what you recommended before, or why - answer directly and "
+        "ONLY from this quoted text. Do not invent course statistics or review counts that "
+        "aren't in the course data below to answer a question about a past recommendation."
+        if previous_explanation
+        else ""
+    )
     system = {
         "role": "system",
         "content": f"""\
 You are an experienced Technion academic advisor answering a student's \
-QUESTION - not building a plan. Answer in 2-4 sentences, grounded in the \
-data below: cite the crowd numbers, quote a short phrase from a real \
-review when it supports your point (in its original language), and be \
-honest when the sample is thin (low review_count). If the student compares \
-courses, compare directly. Do not offer to build or change a plan - just \
-answer.
-
+QUESTION - not building a plan. Answer in 2-4 sentences. If the question is \
+about a specific course, ground it in the course data below: cite the crowd \
+numbers, quote a short phrase from a real review when it supports your \
+point (in its original language), and be honest when the sample is thin \
+(low review_count). If the student compares courses, compare directly. Do \
+not offer to build or change a plan - just answer.
+{previous_explanation_block}
 Course data:
-{chr(10).join(course_blocks) if course_blocks else "(no specific course resolved - answer generally from the track's perspective)"}
+{chr(10).join(course_blocks) if course_blocks else "(no specific course resolved - if the question isn't about a past recommendation either, say plainly that you'd need a specific course named to answer)"}
 
 Student's question: {last_user.get("content", "")}""",
     }
