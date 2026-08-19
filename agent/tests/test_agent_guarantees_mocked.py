@@ -444,6 +444,52 @@ finally:
     arl._call_with_tools = orig
 
 
+# --- Test 9: credit-floor top-up backstop ---
+# Found live: honoring an explicit "add X" request by dropping enough
+# OTHER courses to fall from 17.5 to 13 credits, well under the floor -
+# the model's own over-trimming, not any single backstop's fault. This
+# checks the guarantee directly: a plan that ends up under the credit
+# floor gets topped back up from the real available shortlist before
+# delivery, regardless of how it got there.
+print("--- credit-floor top-up backstop ---")
+
+LIGHT_PLAN = ["03940804"]  # one no-exam elective, ~2 credits - well under the floor
+
+orig_min_mandatory2 = _tools.DEFAULT_MIN_MANDATORY_COURSES
+_tools.DEFAULT_MIN_MANDATORY_COURSES = 0  # isolate the credit floor from the mandatory-count floor
+
+
+def script_deliver_light_plan(_messages):
+    if not getattr(script_deliver_light_plan, "verified", False):
+        script_deliver_light_plan.verified = True
+        return msg([tool_call("verify_plan", {"plan_course_numbers": LIGHT_PLAN})]), 0.0
+    return msg([tool_call("deliver_plan", {"course_numbers": LIGHT_PLAN, "explanation": "light plan"})]), 0.0
+
+
+def stub_verify_pass_any_credits(track_, plan, passed_, **kw):
+    pts = sum(float(track.courses[c].get("points") or 0) for c in plan if c in track.courses)
+    return {"pass": True, "total_credits": pts, "workload_score": 40.0, "issues": []}
+
+
+arl._call_with_tools = script_deliver_light_plan
+_tools.verify_plan = stub_verify_pass_any_credits
+_tools.check_invariants = lambda *a, **k: []
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=base_state())
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    total_pts = sum(float(track.courses[c].get("points") or 0) for c in delivered if c in track.courses)
+    check("credit_floor_topup_enforced" in names, "credit-floor backstop fired on a light delivery")
+    check(total_pts >= _tools.DEFAULT_MIN_CREDITS, f"final credits ({total_pts}) reach the floor ({_tools.DEFAULT_MIN_CREDITS})")
+    check("03940804" in delivered, "the original elective is kept, not discarded, alongside the top-up")
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+    _tools.DEFAULT_MIN_MANDATORY_COURSES = orig_min_mandatory2
+    script_deliver_light_plan.verified = False
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")

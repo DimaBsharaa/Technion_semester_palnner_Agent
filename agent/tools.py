@@ -960,6 +960,7 @@ def verify_plan(
     max_credits: float = DEFAULT_MAX_CREDITS,
     min_mandatory_courses: int = DEFAULT_MIN_MANDATORY_COURSES,
     approved_retake_course: str | None = None,
+    failed_courses: list[str] | None = None,
 ) -> dict:
     """The critic: checks a candidate plan against prerequisites, semester
     offering, credit range, day-of-week constraints, exam spacing, workload
@@ -975,9 +976,20 @@ def verify_plan(
     approved_retake_course: same single-course, single-turn exception as
     check_invariants - a passed course the student just explicitly approved
     retaking for grade improvement. Every other passed course still fails
-    this check exactly as before."""
+    this check exactly as before.
+
+    failed_courses: a retake's own prerequisites were met the first time
+    the student took it, so they're exempt from the prereq check below -
+    same exemption prereq_unmet_in already applies. Found live: a course
+    correctly delivered AND TAGGED as a retake was simultaneously flagged
+    "prerequisites not met" here, a confusing self-contradiction the
+    student had no way to make sense of - this one check had drifted out
+    of sync with the exemption every other prereq check in this file
+    already honors. Passed via resolve_verify_kwargs, same as
+    approved_retake_course, so no call site needs to change."""
     excluded_weekdays = set(excluded_weekdays or [])
     passed = set(passed_courses)
+    failed = set(failed_courses or [])
     issues = []
 
     unknown = [c for c in plan_course_numbers if c not in track.courses]
@@ -990,7 +1002,7 @@ def verify_plan(
             issues.append({"course": c, "reason": "already passed - can't be retaken or counted again"})
         if not course["offered_next_semester"]:
             issues.append({"course": c, "reason": f"not offered in {track.target_semester}"})
-        if not _prereq_satisfied(course["prerequisites"], passed):
+        if c not in failed and not _prereq_satisfied(course["prerequisites"], passed):
             issues.append({"course": c, "reason": "prerequisites not met"})
 
     # Coordinated section check for the WHOLE plan at once: sections are

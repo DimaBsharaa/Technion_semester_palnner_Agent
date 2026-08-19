@@ -760,6 +760,10 @@ def resolve_verify_kwargs(state: dict) -> dict:
     # separate threading anywhere else. See tools.verify_plan's docstring.
     if state.get("approved_retake_course"):
         kwargs["approved_retake_course"] = state["approved_retake_course"]
+    # Retakes are exempt from verify_plan's prereq check (their prereqs
+    # were met the first time around) - see verify_plan's docstring. Always
+    # included, unconditionally, unlike approved_retake_course above.
+    kwargs["failed_courses"] = state.get("failed_courses") or []
     return kwargs
 
 

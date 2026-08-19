@@ -437,6 +437,15 @@ student's own constraints truly force. "Lazy" issues are NEVER acceptable \
 - low credits, too few mandatory courses, exam clashes, class-time \
 overlaps, or including a DAY-BLOCKED course - all of those are fixable by \
 substitution, so fix them before delivering.
+- If workload score exceeds the cap, fix it by SWAPPING one heavy elective \
+for a lighter one - never by dropping courses outright until credits fall \
+below the target. A too-heavy week is a real, disclosable trade-off; a \
+too-light one (found live: adding one explicitly-requested hard course \
+triggered removing enough others to fall to 13 credits) is a worse outcome \
+than a somewhat heavy but real semester, and is never an acceptable way to \
+resolve a workload complaint. When a genuinely fewer-credits plan is the \
+right call, that's the student's decision (pace="light" or \
+override_minimums), not a silent one you make for them by over-trimming.
 - Never include a course tagged DAY-BLOCKED in the shortlist. Deliver \
 clash-free, and in your explanation name what relaxing ONE specific day \
 would unlock (e.g. "freeing Monday would add X and Y and reach 18 \
@@ -1570,6 +1579,58 @@ def run_agent_turn_v2(
                     "plan was missing; the least valuable elective(s) made room for them."
                 )
                 tool_log.append({"name": "mandatory_topup_enforced", "args": {}, "result": {"added": added}})
+
+    # HARD credit-floor top-up backstop: mirrors the mandatory top-up
+    # above, but for the credit minimum itself - found live, honoring an
+    # explicit "add X" request by dropping enough OTHER courses to fall
+    # from 17.5 to 13 credits, well under the floor, even though the
+    # prompt says never to do that. The model's own over-trimming can
+    # produce this regardless of which backstop (if any) fired, so this is
+    # checked unconditionally against the truly current total.
+    if final_course_numbers:
+        min_credits = verify_kwargs.get("min_credits", tools.DEFAULT_MIN_CREDITS)
+        current_points = sum(
+            float(track.courses[c].get("points") or 0) for c in final_course_numbers if c in track.courses
+        )
+        if current_points < min_credits:
+            already_in = set(final_course_numbers)
+            pool = [
+                c
+                for c in track.courses
+                if c not in already_in and c not in passed and track.courses[c].get("offered_next_semester")
+            ]
+            locked_pool = set(tools.prereq_unmet_in(track, pool, passed, failed)) if pool else set()
+            existing_sport = len(_sport_courses_in(track, final_course_numbers))
+            candidates = [
+                c
+                for c in pool
+                if c not in locked_pool
+                and not (existing_sport >= 1 and c in _sport_courses_in(track, [c]))
+                and not (
+                    excluded_weekdays
+                    and track.courses[c].get("schedule")
+                    and {s["weekday"] for s in tools.pick_section(track.courses[c], excluded_weekdays)}
+                    <= set(excluded_weekdays)
+                )
+            ]
+            candidates.sort(key=lambda c: float(track.courses[c].get("points") or 0), reverse=True)
+            topped_up = []
+            for c in candidates:
+                if current_points >= min_credits:
+                    break
+                final_course_numbers = final_course_numbers + [c]
+                current_points += float(track.courses[c].get("points") or 0)
+                topped_up.append(c)
+            if topped_up:
+                last_verify_result = tools.verify_plan(
+                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+                )
+                names = ", ".join(track.courses[c]["name"] for c in topped_up)
+                final_explanation += (
+                    f" Note: added {names} - the plan had fallen below the credit floor; these fill "
+                    "it back out from the available shortlist."
+                )
+                tool_log.append({"name": "credit_floor_topup_enforced", "args": {}, "result": {"added": topped_up}})
 
     # HARD collision backstop: a delivered week must NEVER contain a real
     # class-time collision, on any path (model delivery, forced wrap-up,

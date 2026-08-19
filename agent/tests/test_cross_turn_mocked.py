@@ -111,14 +111,17 @@ def make_deliver_message(course_numbers, explanation):
 captured_react_prompts: list[str] = []
 # A verifiable, realistic plan: the retake + real courses from the track.
 # Includes enough real mandatory courses (00940224 the retake, plus
-# 00960275/00960411, both unlocked given this state) to clear
-# tools.DEFAULT_MIN_MANDATORY_COURSES on its own - otherwise the
-# mandatory-course top-up backstop in agent_react_loop.py (added after a
-# live bug where filler electives got delivered instead of available
-# mandatory courses) would append more courses here, breaking this test's
-# exact-match assertions below, which are about the known_context plumbing,
-# not that specific backstop.
-DELIVERED = ["00940224", "00960425", "03940902", "00960275", "00960411"]
+# 00960275/00960411/00940312, all unlocked and NOT already auto-backfilled
+# passed for this state) to clear tools.DEFAULT_MIN_MANDATORY_COURSES, AND
+# enough total credits (19.0) to clear tools.DEFAULT_MIN_CREDITS -
+# otherwise either the mandatory-course top-up backstop or the
+# credit-floor top-up backstop in agent_react_loop.py (both added after
+# live bugs: filler electives delivered instead of available mandatory
+# courses, and an explicit "add X" request honored by dropping credits
+# well under the floor) would append more courses here, breaking this
+# test's exact-match assertions below, which are about the known_context
+# plumbing, not either backstop.
+DELIVERED = ["00940224", "00960425", "03940902", "00960275", "00960411", "00940312"]
 
 
 def fake_call_with_tools(react_messages):

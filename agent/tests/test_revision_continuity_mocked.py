@@ -217,16 +217,18 @@ script_verify_stranger_never_deliver.n = 0
 arl._extract_student_state = fake_extract
 arl._call_with_tools = script_verify_stranger_never_deliver
 _tools.verify_plan = stub_verify_equal
-# PREVIOUS_PLAN only carries 1 real mandatory course (the retake) - fine
-# for this test's actual purpose (does wrap-up prefer the student's OWN
-# seed over a stranger plan?), but the mandatory-course top-up backstop
-# (agent_react_loop.py, added after a live bug where filler electives got
-# delivered instead of available mandatory courses) would otherwise append
-# more real courses on top of the exact seed being checked for here.
-# Lowering the floor to what PREVIOUS_PLAN already has keeps this test
-# isolated to the SEED-preference behavior it's actually about.
+# PREVIOUS_PLAN only carries 1 real mandatory course (the retake) and 8.5
+# credits - fine for this test's actual purpose (does wrap-up prefer the
+# student's OWN seed over a stranger plan?), but the mandatory-course and
+# credit-floor top-up backstops (agent_react_loop.py, both added after
+# live bugs) would otherwise append more real courses on top of the exact
+# seed being checked for here. Lowering both floors to what PREVIOUS_PLAN
+# already has keeps this test isolated to the SEED-preference behavior
+# it's actually about.
 orig_min_mandatory = _tools.DEFAULT_MIN_MANDATORY_COURSES
+orig_min_credits = _tools.DEFAULT_MIN_CREDITS
 _tools.DEFAULT_MIN_MANDATORY_COURSES = 1
+_tools.DEFAULT_MIN_CREDITS = 8
 try:
     res = arl.run_agent_turn_v2(
         TRACK_ID,
@@ -247,6 +249,7 @@ finally:
     arl._call_with_tools = orig_call
     _tools.verify_plan = orig_verify
     _tools.DEFAULT_MIN_MANDATORY_COURSES = orig_min_mandatory
+    _tools.DEFAULT_MIN_CREDITS = orig_min_credits
 
 
 # --- Part 2d: a verified swap candidate beats the unchanged seed at wrap-up ---
