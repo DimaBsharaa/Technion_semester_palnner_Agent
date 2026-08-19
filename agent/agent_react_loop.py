@@ -293,7 +293,13 @@ proposing - don't force it, and never propose more than one course at once.
                 "\nHARD REQUIREMENT: the student explicitly asked to REMOVE these course(s) - "
                 "the delivered plan MUST NOT contain them, no exceptions:\n"
                 + "\n".join("- " + n for n in removal_names)
-                + "\nReplace them with suitable alternatives from the available-courses shortlist."
+                + "\nReplace them with suitable alternatives from the available-courses shortlist. If a "
+                "removed course was the only currently-known way to satisfy a MANDATORY-CHOICE group "
+                "(found live: the student says they already passed it, e.g. \"I already passed algebra\" "
+                "- believe them even if extraction couldn't confidently attach a specific course number to "
+                "that claim), do NOT put the exact same course back to cover that group - either find a "
+                "genuinely different variant, or leave the requirement honestly open and say so plainly; "
+                "never silently undo an explicit removal by re-adding the identical course."
             )
         issues_note = ""
         if previous_issues:
@@ -1713,7 +1719,18 @@ def run_agent_turn_v2(
         mandatory_in_plan = [c for c in final_course_numbers if c in track.mandatory_course_numbers and c not in passed]
         shortfall = effective_min - len(mandatory_in_plan)
         if shortfall > 0:
-            candidate_pool = sorted(remaining_mandatory - set(final_course_numbers))
+            # Never re-add a course the student explicitly asked removed
+            # this turn - found live, a student who said "I already passed
+            # algebra, swap it out" had the removal immediately undone by
+            # this exact backstop re-adding the same course as "the missing
+            # mandatory requirement," because the system didn't yet know
+            # she'd passed the equivalent. Respecting the explicit removal
+            # here can leave the mandatory-choice-group issue genuinely
+            # open - correct: the student's directive outranks the
+            # heuristic's guess about what's still needed, and the open
+            # issue honestly discloses the trade-off instead of silently
+            # overriding her.
+            candidate_pool = sorted(remaining_mandatory - set(final_course_numbers) - set(requested_removals))
             still_locked = tools.prereq_unmet_in(track, candidate_pool, passed, failed) if candidate_pool else set()
             candidates = [
                 c for c in candidate_pool
@@ -1784,10 +1801,15 @@ def run_agent_turn_v2(
         )
         if current_points < min_credits:
             already_in = set(final_course_numbers)
+            # Same "never re-add an explicitly removed course" rule as the
+            # mandatory top-up above.
             pool = [
                 c
                 for c in track.courses
-                if c not in already_in and c not in passed and track.courses[c].get("offered_next_semester")
+                if c not in already_in
+                and c not in passed
+                and c not in requested_removals
+                and track.courses[c].get("offered_next_semester")
             ]
             locked_pool = set(tools.prereq_unmet_in(track, pool, passed, failed)) if pool else set()
             existing_sport = len(_sport_courses_in(track, final_course_numbers))

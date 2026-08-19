@@ -558,6 +558,57 @@ finally:
     script_stubbornly_omit_approved_retake.n = 0
 
 
+# --- Test 11: an explicit removal is never silently undone by the top-up backstops ---
+# Found live: a student said "I already passed algebra, swap it out" - the
+# removal was correctly recognized, but the mandatory-course top-up
+# backstop (or the credit-floor one, same bug) immediately re-added the
+# EXACT SAME course right back, since neither excluded requested_removals
+# from its own candidate search - the system didn't yet know an equivalent
+# was passed, so from its own (wrong) perspective the course still looked
+# like "the missing mandatory requirement." An explicit removal must
+# outrank a heuristic's guess about what's still needed, even if that
+# means an honestly-disclosed open issue instead.
+print("--- explicit removal is never silently undone by mandatory/credit top-up ---")
+
+REMOVE_TARGET = "00940314"  # real, unlocked mandatory course given this state
+NO_TARGET_PLAN = ["00940224", "00960570"]  # already-passed courses only - forces a real shortfall
+
+
+def script_deliver_without_removed_course(_messages):
+    if not getattr(script_deliver_without_removed_course, "verified", False):
+        script_deliver_without_removed_course.verified = True
+        return msg([tool_call("verify_plan", {"plan_course_numbers": NO_TARGET_PLAN})]), 0.0
+    return msg([tool_call("deliver_plan", {"course_numbers": NO_TARGET_PLAN, "explanation": "removed as asked"})]), 0.0
+
+
+removal_state = state_with_prereqs_for_strong()
+removal_state["remove_courses"] = [REMOVE_TARGET]
+
+arl._call_with_tools = script_deliver_without_removed_course
+_tools.verify_plan = stub_verify_pass_any_credits
+_tools.check_invariants = lambda *a, **k: []
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID,
+        [{"role": "user", "content": "I already passed this, swap it out"}],
+        0.0,
+        state_override=removal_state,
+        known_context={"previous_plan": [REMOVE_TARGET, "00940224", "00960570"]},
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    check("requested_removals" in names, "the removal request was recognized")
+    check(
+        REMOVE_TARGET not in delivered,
+        "the explicitly removed course is NOT silently re-added by mandatory/credit top-up",
+    )
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+    script_deliver_without_removed_course.verified = False
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")
