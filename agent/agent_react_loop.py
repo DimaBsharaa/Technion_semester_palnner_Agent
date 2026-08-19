@@ -1329,16 +1329,19 @@ def run_agent_turn_v2(
                 last_verify_result = tools.verify_plan(
                     track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
                 )
-                issues = last_verify_result.get("issues", [])
-                issues_sentence = (
-                    " Everything checks out." if not issues
-                    else " Still open: " + "; ".join(i["reason"] for i in issues) + "."
-                )
+                # {ISSUES_SENTENCE} deferred the same way {COURSE_COUNT}/
+                # {TOTAL_CREDITS} are below - a later backstop (mandatory
+                # top-up, locked-course, overlap...) can still resolve one of
+                # these issues, and a sentence written NOW would then claim a
+                # problem that's already fixed by the time this is shown to
+                # the student (found live: "only 2 mandatory course(s))"
+                # still printed after the top-up backstop had already added
+                # a 3rd).
                 final_explanation = (
                     f"Switched to a better-verified alternative before delivering "
                     f"({{COURSE_COUNT}} course(s), {{TOTAL_CREDITS}} credits) - the plan initially reached "
                     "was still short of the delivery standard even after correction attempts."
-                    + issues_sentence
+                    "{ISSUES_SENTENCE}"
                 )
                 tool_log.append({"name": "final_safety_swap", "args": {}, "result": last_verify_result})
 
@@ -1539,10 +1542,18 @@ def run_agent_turn_v2(
     # next to an explanation that had already dropped to 6). Substituted
     # here, after every backstop has had its say, against the truly final
     # numbers - a no-op replace when no placeholder was ever inserted.
-    if "{COURSE_COUNT}" in final_explanation or "{TOTAL_CREDITS}" in final_explanation:
-        final_explanation = final_explanation.replace(
-            "{COURSE_COUNT}", str(len(final_course_numbers))
-        ).replace("{TOTAL_CREDITS}", str(verify_result.get("total_credits", 0)))
+    if "{COURSE_COUNT}" in final_explanation or "{TOTAL_CREDITS}" in final_explanation or "{ISSUES_SENTENCE}" in final_explanation:
+        remaining_issues = verify_result.get("issues", [])
+        issues_sentence = (
+            " Everything checks out."
+            if not remaining_issues
+            else " Still open: " + "; ".join(i["reason"] for i in remaining_issues) + "."
+        )
+        final_explanation = (
+            final_explanation.replace("{COURSE_COUNT}", str(len(final_course_numbers)))
+            .replace("{TOTAL_CREDITS}", str(verify_result.get("total_credits", 0)))
+            .replace("{ISSUES_SENTENCE}", issues_sentence)
+        )
     exam_dates = tools.fetch_exam_dates(track, final_course_numbers) if final_course_numbers else {}
     cheesefork = tools.summarize_cheesefork(track, final_course_numbers) if final_course_numbers else {}
     progress = tools.assess_progress(track, semester_number, passed)
