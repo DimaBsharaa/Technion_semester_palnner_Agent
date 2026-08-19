@@ -684,6 +684,30 @@ def run_agent_turn_v2(
     passed, failed = backfill_passed_courses(track, state)
     state["passed_courses"] = passed
     state["failed_courses"] = failed
+    # Second chance for grade_retake_self_requested: the check above ran
+    # BEFORE backfill, against whatever passed_courses the raw extraction
+    # happened to list explicitly - found live, the same prompt sometimes
+    # has the model say "passed_all_expected: true" instead of also
+    # listing the retake course by number, leaving passed_courses empty at
+    # that point even though the SAME extraction correctly set
+    # requested_retake_course and a real grade for it. Model sampling
+    # variance, not a logic bug - backfill_passed_courses's own grade-based
+    # inference (see _normalize_state) or its expected-by-now inference can
+    # still confirm the course is genuinely passed even when the early
+    # check missed it.
+    if (
+        not state["approved_retake_course"]
+        and state.get("requested_retake_course")
+        and state["requested_retake_course"] in passed
+    ):
+        state["approved_retake_course"] = state["requested_retake_course"]
+        tool_log.append(
+            {
+                "name": "grade_retake_self_requested",
+                "args": {},
+                "result": {"course_number": state["approved_retake_course"]},
+            }
+        )
     excluded_weekdays = state["constraints"].get("excluded_weekdays") or []
     verify_kwargs = resolve_verify_kwargs(state)
 
@@ -1555,6 +1579,37 @@ def run_agent_turn_v2(
             "this genuinely needs a constraint relaxed (a different weekday exclusion, pace, or override) "
             "before a semester plan can be built."
         )
+
+    # HARD approved-retake guarantee: the in-loop nudge/enforce above only
+    # ever fires when the model actually calls deliver_plan - found live,
+    # the loop can also resolve via forced wrap-up (best_verified_plan,
+    # when the model never delivers) or the final safety swap, neither of
+    # which knew about approved_retake_course at all. An explicit student
+    # directive must survive EVERY delivery path, not just the common one -
+    # checked here unconditionally, after path selection but before the
+    # mandatory/credit top-ups below (so their own counts already include
+    # it), collision-checked since nothing but the later overlap backstop
+    # runs after this.
+    approved = state.get("approved_retake_course")
+    if (
+        approved
+        and final_course_numbers
+        and approved not in final_course_numbers
+        and track.courses.get(approved, {}).get("offered_next_semester")
+    ):
+        droppable = sorted(
+            (c for c in final_course_numbers if c not in track.mandatory_course_numbers and c != approved),
+            key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
+        )
+        if droppable:
+            final_course_numbers = [c for c in final_course_numbers if c != droppable[0]]
+        final_course_numbers = final_course_numbers + [approved]
+        approved_name = track.courses[approved]["name"] if approved in track.courses else approved
+        last_verify_result = tools.verify_plan(
+            track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+        )
+        final_explanation += f" Note: added your approved retake of {approved_name}."
+        tool_log.append({"name": "approved_retake_guaranteed", "args": {}, "result": {"course_number": approved}})
 
     # HARD locked-course backstop: a course whose prerequisites aren't met
     # cannot be registered for, period - strip it on any delivery path.
