@@ -2157,16 +2157,19 @@ function renderCourseChecklist() {
   const el = document.getElementById('courseChecklist');
   el.innerHTML = '';
 
-  // Only show courses expected done by now (depth <= semester - buffer, the
-  // SAME cutoff assess_progress uses server-side) - a student isn't asked
-  // about courses they haven't reached yet at all, only to flag exceptions
-  // among ones they should already have finished. The buffer comes from
-  // the backend (tools.EXPECTED_BY_NOW_BUFFER) rather than being a second
-  // hardcoded copy here - a prior mismatch (this file said "-2", the
-  // backend had since been recalibrated to 3) silently showed/hid the
-  // wrong courses in this exact checklist.
-  const buffer = intakeOptions.expected_by_now_buffer ?? 3;
-  const expectedByNow = intakeOptions.mandatory_courses.filter((c) => c.depth <= selectedSemester - buffer);
+  // Wider than the server's own auto-backfill cutoff (tools.
+  // EXPECTED_BY_NOW_BUFFER) on purpose: that buffer decides what to
+  // SILENTLY ASSUME already passed, which needs to stay conservative. This
+  // checklist decides what to SHOW for the student to confirm - now that
+  // nothing here is pre-selected (see the "Nothing is pre-selected" note
+  // above), showing more is only ever more helpful, never a wrong silent
+  // guess. Found live: a semester-3 student was never even shown Data
+  // Structures/Algorithms (a real, close, semester-2/3-level course) to
+  // confirm because the narrower auto-backfill cutoff excluded it -
+  // depth < semester (rather than depth <= semester - buffer) covers a
+  // full extra "prerequisite layer" of courses below the student's own
+  // semester, without pulling in ones that are genuinely still far off.
+  const expectedByNow = intakeOptions.mandatory_courses.filter((c) => c.depth < selectedSemester);
 
   if (expectedByNow.length === 0) {
     el.textContent = "No required courses are expected done yet at this semester - you're all caught up by default.";
