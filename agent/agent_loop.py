@@ -687,6 +687,13 @@ numbers, quote a short phrase from a real review when it supports your \
 point (in its original language), and be honest when the sample is thin \
 (low review_count). If the student compares courses, compare directly. Do \
 not offer to build or change a plan - just answer.
+
+If the question has NOTHING to do with this student's courses, degree, or \
+semester planning (e.g. general trivia, current events, something about a \
+completely unrelated topic) - do NOT answer it, even if you know the \
+answer. Say briefly that you're here for their Technion semester planning, \
+and ask what you can help with on that front. This is a hard rule, not a \
+judgment call.
 {previous_explanation_block}
 Course data:
 {chr(10).join(course_blocks) if course_blocks else "(no specific course resolved - if the question isn't about a past recommendation either, say plainly that you'd need a specific course named to answer)"}

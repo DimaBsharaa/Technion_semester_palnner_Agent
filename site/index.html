@@ -848,6 +848,7 @@
       <span style="font-size:.85em; color:var(--mut);">or fill in manually below</span>
     </div>
     <div id="transcriptNote" style="display:none; font-size:.85em; margin-bottom:8px;"></div>
+    <span style="font-size:.85em; color:var(--mut); display:block; margin-bottom:4px;">Nothing is pre-selected - mark each course Passed or Failed yourself; anything left blank is treated as not yet confirmed, not assumed passed.</span>
     <div id="courseChecklist" class="course-checklist">Loading course list…</div>
   </div>
 
@@ -2034,9 +2035,10 @@ inputEl.addEventListener('keydown', (e) => {
 // from typed text) for the one question that's really just a fixed choice.
 // The checklist itself only shows courses a student at this semester should
 // already have finished (same depth<=semester-buffer cutoff assess_progress
-// uses server-side, buffer value fetched from /intake-options) - defaulted
-// to "Passed", so the interaction is just "flag the exceptions" rather than
-// reviewing every course in the degree.
+// uses server-side, buffer value fetched from /intake-options). Nothing is
+// pre-selected - a student explicitly asked for this, after noticing every
+// row silently defaulted to "Passed" whether or not it was actually true.
+// A course left untouched submits as neither passed nor failed.
 
 let selectedTrackId = null;
 let intakeOptions = null;
@@ -2172,10 +2174,12 @@ function renderCourseChecklist() {
   }
 
   for (const course of expectedByNow) {
-    if (!touchedCourses.has(course.course_number)) {
-      courseStatus[course.course_number] = 'passed';
-    }
-
+    // No default guess, on purpose - a student explicitly asked this never
+    // silently assume "passed" and be right often enough to hide the
+    // occasional wrong guess. Left untouched, a course submits as neither
+    // passed nor failed (see gapSubmit's Object.entries filter below) -
+    // the server's own heuristic then treats it as unknown/not-yet-taken,
+    // same as never having appeared in this checklist at all.
     const row = document.createElement('div');
     row.className = 'course-row';
 
