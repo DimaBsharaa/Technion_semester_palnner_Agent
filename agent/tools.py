@@ -181,8 +181,17 @@ def get_intake_options(track: Track) -> dict:
         if c in track.courses
     ]
     # Choose-one-variant requirements appear as ONE row each (the student
-    # answers for the group; the first option stands in as its id).
+    # answers for the group; the first option stands in as its id) - UNLESS
+    # one specific variant is already individually listed above, which
+    # happens whenever official_semester (or the tree walk) tags one exact
+    # option as required on its own. Found live: a student saw BOTH
+    # "אלגברה 1מ2" on its own row AND "אלגברה 1/מורחב / אלגברה 1מ2 (אחת
+    # מהאפשרויות)" as a second row - two questions for one real
+    # requirement, since the diagram already tells us specifically which
+    # variant applies, no "pick one" ambiguity is left to ask about.
     for group in track.mandatory_choice_groups:
+        if any(o in track.mandatory_course_numbers for o in group["options"]):
+            continue
         mandatory.append(
             {
                 "course_number": group["options"][0],

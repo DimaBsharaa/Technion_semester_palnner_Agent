@@ -499,6 +499,8 @@
   .course-row-name { font-size: .82rem; direction: rtl; text-align: right; flex: 1; }
   .course-row-toggles { display: flex; gap: 4px; flex-shrink: 0; }
   .course-row-toggles .toggle-btn { padding: 4px 9px; font-size: .72rem; }
+  .course-row-semester-header { font-size: .72rem; font-weight: 700; color: var(--mut); text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px 2px; }
+  .course-row-semester-header:first-child { padding-top: 2px; }
 
   #gapSubmit {
     font-family: var(--disp);
@@ -2194,7 +2196,23 @@ function renderCourseChecklist() {
     return;
   }
 
+  // Group by semester with a visible label - found live: a course
+  // correctly tagged semester 2 in the data still read as "semester 1"
+  // to the student, because the checklist was one flat unlabeled list
+  // with no way to tell which courses belonged to which semester at a
+  // glance. official_semester is real diagram data; courses without it
+  // (depth-heuristic fallback only) get a single "earlier requirement"
+  // label instead of a specific number we don't actually know.
+  let lastGroupLabel = null;
   for (const course of expectedByNow) {
+    const groupLabel = course.official_semester != null ? `Semester ${course.official_semester}` : 'Earlier requirement';
+    if (groupLabel !== lastGroupLabel) {
+      lastGroupLabel = groupLabel;
+      const header = document.createElement('div');
+      header.className = 'course-row-semester-header';
+      header.textContent = groupLabel;
+      el.appendChild(header);
+    }
     // No default guess, on purpose - a student explicitly asked this never
     // silently assume "passed" and be right often enough to hide the
     // occasional wrong guess. Left untouched, a course submits as neither

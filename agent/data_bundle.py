@@ -21,6 +21,24 @@ from pathlib import Path
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _MANDATORY_CATEGORY_NAMES = {"מקצועות חובה", "Mandatory", "Mandatory option"}
 
+# The mirror image of the missing-courses problem: Technion's requirement-
+# tree API tags some courses "Mandatory" that the official DDS diagram
+# never lists at all - found live, cross-checking the diagram the user
+# uploaded against this exact track. 00940347 (מתמטיקה דיסקרטית, no ת')
+# showed up as its own separate checklist row right next to 00940345
+# (מתמטיקה דיסקרטית ת'), the one the diagram actually places in semester 1
+# - two rows for what's really one requirement. Per-track, per-course,
+# because this is confirmed against each track's own diagram, not a
+# general rule (00940347 might be a real requirement somewhere else).
+_CONFIRMED_NON_REQUIREMENTS: dict[str, set[str]] = {
+    # הנדסת מערכות מידע - 00940347: diagram wants 00940345 (ת') only.
+    # 01040022 (חשבון דיפרנציאלי ואינטגרלי 2מ', 5 pts) is the same course
+    # as 01040044 (חשבון דיפרנציאלי ואינטגרלי 2מ2, 5 pts, the one the
+    # diagram actually places in semester 2) under a second course number -
+    # confirmed by the near-identical name and identical credit points.
+    "SC00001416": {"00940347", "01040022"},
+}
+
 
 def _leaf_courses(node: dict) -> list[str]:
     if "course" in node:
@@ -108,6 +126,7 @@ class Track:
         # everything the diagram does. Any course the diagram places in a
         # semester is mandatory by definition, tree or no tree.
         self.mandatory_course_numbers |= set(self.official_semester.keys())
+        self.mandatory_course_numbers -= _CONFIRMED_NON_REQUIREMENTS.get(self.otjid, set())
         # Required courses that come as "pick one variant" groups (e.g.
         # calculus 1מ' OR 1מ2) live under the Mandatory category but NOT in
         # flat "Mandatory option" leaves - missing them made the agent treat
@@ -127,8 +146,11 @@ class Track:
         """Walks the requirement tree; every non-mandatory-named node that
         sits under a mandatory category and whose children are all course
         leaves is one choose-one-of group. Options are filtered to courses
-        this track's bundle actually has; groups fully covered by the flat
-        mandatory list are skipped (nothing new to require)."""
+        this track's bundle actually has (and never a confirmed
+        non-requirement - see _CONFIRMED_NON_REQUIREMENTS); groups fully
+        covered by the flat mandatory list are skipped (nothing new to
+        require)."""
+        excluded = _CONFIRMED_NON_REQUIREMENTS.get(self.otjid, set())
         groups: list[dict] = []
         seen: set[frozenset] = set()
 
@@ -142,7 +164,7 @@ class Track:
                 and children
                 and all("course" in c for c in children)
             ):
-                options = [c for c in _leaf_courses(node) if c in self.courses]
+                options = [c for c in _leaf_courses(node) if c in self.courses and c not in excluded]
                 key = frozenset(options)
                 if options and key not in seen and not key <= self.mandatory_course_numbers:
                     seen.add(key)
