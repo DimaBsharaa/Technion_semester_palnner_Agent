@@ -92,7 +92,7 @@ print("--- react loop: revision turn never bounces to intake ---")
 captured_prompts: list[list] = []
 
 
-def fake_extract(track, messages, known_state=None):
+def fake_extract(track, messages, known_state=None, proposed_retake=None):
     return dict(degraded), 0.0
 
 
@@ -284,7 +284,7 @@ REMOVE_TARGET = "00960425"  # in PREVIOUS_PLAN
 STUBBORN = list(PREVIOUS_PLAN)  # model keeps delivering the unchanged plan, target included
 
 
-def extract_with_removal(track, messages, known_state=None):
+def extract_with_removal(track, messages, known_state=None, proposed_retake=None):
     st = dict(degraded)
     st["remove_courses"] = [REMOVE_TARGET]
     return st, 0.0
@@ -372,7 +372,7 @@ finally:
 print("--- explicitly requested retake removal does NOT trigger the pushback ---")
 
 
-def extract_remove_retake(track, messages, known_state=None):
+def extract_remove_retake(track, messages, known_state=None, proposed_retake=None):
     st = dict(degraded)
     st["remove_courses"] = [RETAKE]
     return st, 0.0

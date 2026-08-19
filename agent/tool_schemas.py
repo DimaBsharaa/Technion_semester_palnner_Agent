@@ -223,12 +223,20 @@ TOOL_SCHEMAS = [
                     },
                     "explanation": {
                         "type": "string",
-                        "description": "The final message to the student - follow the explanation style rules given in the system prompt exactly (length, what to cover, honesty about unresolved trade-offs, never a question).",
+                        "description": "The final message to the student - follow the explanation style rules given in the system prompt exactly (length, what to cover, honesty about unresolved trade-offs, never a question - EXCEPT the one narrow case covered by proposed_retake below, where ending with a short direct question is required).",
                     },
                     "course_reasons": {
                         "type": "object",
                         "description": "For each course number in the plan, ONE short clause (max ~10 words) saying why it earned its spot - e.g. 'unblocks 6 later courses', 'no-exam credits to balance the retake', 'highest-rated elective that fits'. Keys are course numbers, values are the clauses.",
                         "additionalProperties": {"type": "string"},
+                    },
+                    "proposed_retake": {
+                        "type": ["object", "null"],
+                        "description": "Optional. Fill this in ONLY when you're proposing a grade-improvement retake of an already-passed course this turn (see the grade-improvement guidance in the system prompt) - this course must NOT appear in course_numbers; it is a proposal, not an inclusion. Omit/null on every other turn, including turns where you checked grade-improvement data and found nothing worth proposing.",
+                        "properties": {
+                            "course_number": {"type": "string", "description": "The passed course being proposed as a retake candidate."},
+                            "reason": {"type": "string", "description": "One short clause on why - e.g. 'grade well below both the course average and your own average'."},
+                        },
                     },
                 },
                 "required": ["course_numbers", "explanation", "course_reasons"],
@@ -299,7 +307,15 @@ def build_dispatch(
         return tools.compare_plans(track, candidates)
 
     def _check_invariants(args):
-        return {"violations": tools.check_invariants(track, args["plan_course_numbers"], passed, failed)}
+        return {
+            "violations": tools.check_invariants(
+                track,
+                args["plan_course_numbers"],
+                passed,
+                failed,
+                approved_retake_course=verify_kwargs.get("approved_retake_course"),
+            )
+        }
 
     def _roadmap_to_graduation(args):
         return tools.roadmap_to_graduation(track, passed, failed, plan_course_numbers=args.get("plan_course_numbers"))

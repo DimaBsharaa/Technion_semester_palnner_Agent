@@ -46,6 +46,20 @@ def base_state():
     )
 
 
+def state_with_prereqs_for_strong():
+    # STRONG/WEAK (below) include 00970249, which needs 00940224 + 00960570
+    # as prerequisites - state this EXPLICITLY rather than relying on
+    # backfill_passed_courses's auto-inference to happen to cover it, so
+    # this test stays correct regardless of how that heuristic is tuned
+    # (it was, and got deliberately more conservative after live testing
+    # found it wrongly auto-assuming real mandatory courses were already
+    # done - see tools.EXPECTED_BY_NOW_BUFFER).
+    return build_state_from_intake(
+        {"semester_number": 4, "excluded_weekdays": [], "pace": "normal",
+         "passed_courses": ["00940224", "00960570"], "failed_courses": []}
+    )
+
+
 track = get_track(TRACK_ID)
 # Two real, distinct course lists from this track for verify to chew on.
 PLAN_A = ["00940290", "00940314", "00970447", "00960570", "00940241"]
@@ -133,12 +147,57 @@ arl._call_with_tools = script_verify_two_never_deliver
 _tools.verify_plan = stub_verify
 _tools.check_invariants = lambda *a, **k: []
 try:
-    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=base_state())
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=state_with_prereqs_for_strong()
+    )
     delivered = set(c["course_number"] for c in res["plan_result"]["courses"])
     check(delivered == set(STRONG),
           "wrap-up delivered the best (passing) plan STRONG, not the most-recent (failing) WEAK")
     check(res["plan_result"]["verify"]["pass"] is True, "delivered plan reports as passing")
     check(res["stopped_reason"] in ("step_limit_exhausted", "budget_cap"), "wrap-up path was taken")
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+
+
+# --- Test 3b: final safety net swaps a stubbornly-bad delivered plan ---
+# Found live: issue_budget_pushback only retries twice, then accepts
+# whatever the model delivers - an 8-credit plan and a 1-day exam gap both
+# reached a student this way despite the delivery standard saying "never
+# acceptable". This proves the fix: even after the model exhausts its
+# pushback retries and DOES call deliver_plan (unlike test 3 above, where
+# it never delivers at all), a genuinely better plan verified earlier this
+# same turn still wins.
+print("--- final safety net swaps a stubbornly-bad delivered plan ---")
+
+
+def script_stubborn_deliver_weak(_messages):
+    n = getattr(script_stubborn_deliver_weak, "n", 0)
+    script_stubborn_deliver_weak.n = n + 1
+    if n == 0:
+        return msg([tool_call("verify_plan", {"plan_course_numbers": STRONG})]), 0.0
+    if n == 1:
+        return msg([tool_call("verify_plan", {"plan_course_numbers": WEAK})]), 0.0
+    # Stubbornly keeps delivering WEAK no matter how many times
+    # issue_budget_pushback sends it back.
+    return msg([tool_call("deliver_plan", {"course_numbers": WEAK, "explanation": "here", "course_reasons": {}})]), 0.0
+
+
+arl._call_with_tools = script_stubborn_deliver_weak
+_tools.verify_plan = stub_verify
+_tools.check_invariants = lambda *a, **k: []
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=state_with_prereqs_for_strong()
+    )
+    delivered = set(c["course_number"] for c in res["plan_result"]["courses"])
+    names = [t["name"] for t in res["tool_log"]]
+    check(names.count("issue_budget_pushback") == 2, "pushback exhausts its 2-attempt budget")
+    check(res["stopped_reason"] == "delivered", "model DID call deliver_plan (unlike test 3's never-delivers case)")
+    check(delivered == set(STRONG), "final safety net swapped WEAK for the better-verified STRONG plan anyway")
+    check(res["plan_result"]["verify"]["pass"] is True, "delivered plan reports as passing")
+    check("final_safety_swap" in names, "the swap is visible in the trace")
 finally:
     arl._call_with_tools = orig
     _tools.verify_plan = orig_verify

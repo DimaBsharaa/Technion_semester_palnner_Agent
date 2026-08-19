@@ -1378,10 +1378,19 @@ function buildCourseCard(course) {
     card.appendChild(review);
   }
 
-  if (course.schedule && course.schedule.length) {
+  // The COORDINATED section (one group per course, chosen to avoid
+  // collisions/excluded days server-side - see tools.choose_sections),
+  // never the raw course.schedule, which lists every group's slots
+  // combined and would show e.g. the same lecture time once per tutorial
+  // group option (a real bug found live: one course rendered its lecture
+  // 4 times, once per section combination).
+  const displaySlots = (course.timetable_slots && course.timetable_slots.length)
+    ? course.timetable_slots
+    : course.schedule;
+  if (displaySlots && displaySlots.length) {
     const sched = document.createElement('div');
     sched.className = 'course-schedule';
-    for (const s of course.schedule) {
+    for (const s of displaySlots) {
       const chip = document.createElement('span');
       chip.className = 'sched-chip';
       chip.appendChild(document.createTextNode(`${s.type} ${DAY_NAMES[s.weekday]} `));

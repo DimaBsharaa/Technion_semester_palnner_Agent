@@ -185,26 +185,50 @@ def _system_prompt(
     previous_issues: set[str] | None = None,
     requested_removals: list[str] | None = None,
     previous_explanation: str | None = None,
-    grade_suggestions: list[dict] | None = None,
+    grade_candidates: list[dict] | None = None,
+    approved_retake_course: str | None = None,
 ) -> dict:
     grade_suggestions_block = ""
-    if grade_suggestions:
+    if grade_candidates:
         grade_suggestions_block = f"""
-Grade-improvement retake candidates (student's own grade vs. this course's \
-historical average, technion-histograms) - ADVISORY ONLY, purely optional \
-context:
-{json.dumps(grade_suggestions, ensure_ascii=False)}
-If, and only if, genuinely relevant to this turn, you MAY mention one \
-briefly in your final explanation as a labeled suggestion the student can \
-ignore - e.g. "your grade in X was N points below the course average, if \
-you're chasing GPA that's worth a look." NEVER add any of these courses to \
-the delivered plan as a retake, and NEVER claim or imply guaranteed \
-eligibility - Technion's actual grade-improvement (שיפור ציון) policy has \
-its own eligibility rules (which courses qualify, attempt limits, time \
-limits) that are not verified here; if you mention this at all, make clear \
-it's worth confirming with the registrar, not a rule you applied. Most \
-turns this is simply not worth mentioning - don't force it in.
+Grade-improvement retake candidates - RAW DATA ONLY, your judgment call, not \
+a suggestion I'm making for you. Each entry shows the student's grade in a \
+PASSED course against TWO baselines: this course's own historical average \
+(technion-histograms), and the student's OWN average across every grade \
+known about them. A gap against one baseline but not the other is a weaker \
+signal than a gap against both - weigh them together, not as a single number:
+{json.dumps(grade_candidates, ensure_ascii=False)}
+If one looks genuinely promising, call summarize_cheesefork on it first to \
+check what other students actually said (a course that's brutally curved or \
+notoriously easy to improve on is a much stronger signal than the numbers \
+alone) - this is real multi-step reasoning, not a lookup. Only THEN, if \
+still genuinely worth it, you may PROPOSE (never include) it: fill in \
+deliver_plan's proposed_retake field with that one course, and end your \
+explanation with a short, direct question asking whether to add it next \
+time - this is the ONE exception to "never ask a question" elsewhere in \
+this prompt. The proposed course must NOT appear in course_numbers this \
+turn - proposing and delivering are different things.
+NEVER claim or imply guaranteed eligibility - Technion's actual \
+grade-improvement (שיפור ציון) policy has its own eligibility rules (which \
+courses qualify, attempt limits, time limits) that are not verified here; \
+if you propose anything, make clear it's worth confirming with the \
+registrar, not a rule you applied. Most turns nothing here is worth \
+proposing - don't force it, and never propose more than one course at once.
 """
+    approved_retake_note = ""
+    if approved_retake_course:
+        approved_retake_name = (
+            track.courses[approved_retake_course]["name"]
+            if approved_retake_course in track.courses
+            else approved_retake_course
+        )
+        approved_retake_note = (
+            f" The ONE exception this turn: the student just explicitly approved "
+            f"retaking {approved_retake_name} ({approved_retake_course}) - already "
+            f"passed - for grade improvement. You MAY include this specific course "
+            f"in the plan as a deliberate additional course. Do not add any OTHER "
+            f"passed course without the same explicit approval."
+        )
 
     revision_note = ""
     if previous_plan:
@@ -271,7 +295,7 @@ Hard rule, never negotiable: never include a course from the student's \
 passed list below in the plan - it's already completed, retaking it would \
 waste a slot. Only a course from the failed/outstanding list may reappear, \
 and only as a deliberate retake. check_invariants will catch this if you \
-miss it, but you shouldn't rely on that.
+miss it, but you shouldn't rely on that.{approved_retake_note}
 
 This is how that advisor actually thinks, in priority order:
 
@@ -429,7 +453,19 @@ semester) - this is a genuine trade-off to disclose, not a \
 permission-seeking question about an obvious next step. Do not ask the \
 student any other question or offer to build an alternative as a pending \
 option beyond disclosing the trade-off - if a real trade-off exists, \
-state it as already-considered context in this same message.""",
+state it as already-considered context in this same message.
+
+EXACTLY ONE exception to "never a question," and it's an atomic pair, not \
+two independent choices - if you decided a grade-improvement retake is \
+worth proposing this turn (see the grade-improvement section above), you \
+MUST do BOTH of these together, never just one: (1) set deliver_plan's \
+proposed_retake field to that course, AND (2) add one extra sentence at \
+the end of the explanation asking directly whether to include it next \
+time. Filling in proposed_retake with no matching question leaves the \
+student unaware anything was proposed; asking the question without \
+filling in proposed_retake means their "yes" next turn has nothing to \
+attach to and will be lost. This is the ONE case where an extra sentence \
+beyond the normal 3-5 is expected - it doesn't count against that budget.""",
     }
 
 
@@ -474,12 +510,13 @@ def run_agent_turn_v2(
     previous_plan = (known_context or {}).get("previous_plan")
     previous_issues = set((known_context or {}).get("previous_issues") or [])
     previous_explanation = (known_context or {}).get("previous_explanation")
+    proposed_retake = (known_context or {}).get("proposed_retake")
 
     if state_override is not None:
         state = state_override
         tool_log.append({"name": "structured_intake", "args": {}, "result": state})
     else:
-        state, c = _extract_student_state(track, messages, known_state=known_state)
+        state, c = _extract_student_state(track, messages, known_state=known_state, proposed_retake=proposed_retake)
         cost += c
         tool_log.append({"name": "extract_student_state", "args": {}, "result": state})
         if previous_plan and known_state:
@@ -491,6 +528,18 @@ def run_agent_turn_v2(
             # pointing out an exam conflict got re-asked what they'd passed.
             state = _normalize_state(merge_known_state(state, known_state))
             tool_log.append({"name": "merge_known_state", "args": {}, "result": state})
+
+    # Deterministic, code-level check - never trust the model's own claim
+    # that "the student approved this" without confirming it matches a REAL
+    # proposal made last turn. A hallucinated or stale approval must never
+    # reach the plan-building rules below (see tools.verify_plan /
+    # check_invariants's approved_retake_course parameter).
+    state["approved_retake_course"] = None
+    if proposed_retake and state.get("approved_grade_retake") == proposed_retake.get("course_number"):
+        state["approved_retake_course"] = proposed_retake["course_number"]
+        tool_log.append(
+            {"name": "grade_retake_approved", "args": {}, "result": {"course_number": state["approved_retake_course"]}}
+        )
 
     # Question turns ("is X hard?") get one grounded answer from the real
     # review data - no planning loop, no gap-fill buttons, plan untouched.
@@ -540,6 +589,10 @@ def run_agent_turn_v2(
                 "previous_plan": previous_plan,
                 "previous_issues": sorted(previous_issues),
                 "previous_explanation": previous_explanation,
+                # Not resolved this turn (never reached the planning loop) -
+                # carry the incoming proposal forward unchanged rather than
+                # silently dropping it.
+                "proposed_retake": proposed_retake,
             },
         }
 
@@ -565,12 +618,19 @@ def run_agent_turn_v2(
 
     # Only computed (and only spends any prompt tokens) when the student has
     # given at least one grade - the common case is zero grades known, and
-    # this must cost nothing when there's nothing to compare.
-    grade_suggestions = None
+    # this must cost nothing when there's nothing to compare. This is raw
+    # comparison data only (course average AND the student's own average
+    # across known grades) - no threshold decides "worth mentioning" here
+    # anymore, that judgment belongs to the model (see _system_prompt).
+    grade_candidates = None
     if state.get("grades"):
-        grade_suggestions = tools.suggest_grade_improvements(track, passed, state["grades"])
+        grade_candidates = tools.analyze_grade_improvement_candidates(track, passed, state["grades"])
         tool_log.append(
-            {"name": "suggest_grade_improvements", "args": {"preinjected": True}, "result": grade_suggestions}
+            {
+                "name": "analyze_grade_improvement_candidates",
+                "args": {"preinjected": True},
+                "result": grade_candidates,
+            }
         )
 
     available_text = _available_courses_text(track, passed, excluded_weekdays)
@@ -600,7 +660,8 @@ def run_agent_turn_v2(
             previous_issues=previous_issues,
             requested_removals=requested_removals,
             previous_explanation=previous_explanation,
-            grade_suggestions=grade_suggestions,
+            grade_candidates=grade_candidates,
+            approved_retake_course=state.get("approved_retake_course"),
         )
     ]
     # The loop otherwise only sees the condensed extracted state - give it
@@ -661,11 +722,13 @@ def run_agent_turn_v2(
     removal_pushed = False
     retake_dropped_pushed = False
     choice_group_pushed = False
+    approved_retake_pushed = False
     issues_pushed = 0
     stopped_reason = "step_limit_exhausted"
     final_course_numbers: list[str] = []
     final_explanation = ""
     course_reasons: dict = {}
+    new_proposed_retake: dict | None = None
 
     for step in range(MAX_STEPS):
         # Per-TURN spend cap, not per-conversation: cost_so_far is the whole
@@ -791,8 +854,51 @@ def run_agent_turn_v2(
                     # same message still get their required tool responses.
                     continue
 
+                # The student just explicitly approved a grade-improvement
+                # retake (state["approved_retake_course"]) but the model's
+                # course list doesn't include it - live testing showed this
+                # happening even with the exception clearly stated in the
+                # system prompt (a "may include" instruction alone wasn't
+                # reliably acted on). One-shot nudge, same pattern as the
+                # removal/verify nudges above: give the model one real
+                # chance to either include it or explicitly explain why it
+                # genuinely can't (a real schedule/prereq conflict is a
+                # legitimate reason - this is a nudge, not a blind force).
+                approved = state.get("approved_retake_course")
+                if approved and approved not in candidate and not approved_retake_pushed and step < MAX_STEPS - 2:
+                    approved_retake_pushed = True
+                    approved_name = track.courses[approved]["name"] if approved in track.courses else approved
+                    tool_log.append(
+                        {"name": "approved_retake_missing_nudge", "args": {}, "result": {"course_number": approved}}
+                    )
+                    react_messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": (
+                                f"Not delivered: the student just explicitly approved retaking "
+                                f"{approved_name} ({approved}) for grade improvement, but it's not in "
+                                "this course list. Add it and re-verify, unless there's a genuine "
+                                "scheduling or prerequisite conflict that makes it truly impossible - "
+                                "if so, deliver without it but say so plainly in the explanation."
+                            ),
+                        }
+                    )
+                    continue
+
                 final_explanation = args.get("explanation") or ""
                 course_reasons = args.get("course_reasons") or {}
+                # A NEW proposal the model is making THIS turn - deliberately
+                # a different variable from `proposed_retake` above (which
+                # holds LAST turn's proposal, already consumed into
+                # state["approved_retake_course"] earlier). This is what the
+                # NEXT turn will see as its incoming proposed_retake.
+                new_proposed_retake = args.get("proposed_retake") or None
+                if new_proposed_retake and new_proposed_retake.get("course_number") in candidate:
+                    # Contradiction guard: a course can't be both proposed
+                    # and already included - if it's in the plan, there's
+                    # nothing left to propose about it.
+                    new_proposed_retake = None
                 # Audit note only, not a safety gate - verify_plan and
                 # check_invariants are re-run unconditionally below
                 # regardless of this, so the student is never shown a
@@ -810,7 +916,9 @@ def run_agent_turn_v2(
                 verify_result = tools.verify_plan(
                     track, candidate, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
                 )
-                violations = tools.check_invariants(track, candidate, passed, failed)
+                violations = tools.check_invariants(
+                    track, candidate, passed, failed, approved_retake_course=state.get("approved_retake_course")
+                )
                 if violations:
                     tool_log.append({"name": "check_invariants", "args": {}, "result": {"violations": violations}})
                     seen: set[str] = set()
@@ -1143,7 +1251,9 @@ def run_agent_turn_v2(
                 tool_log.append(
                     {"name": "wrapup_kept_seed", "args": {}, "result": {"reason": "no model candidate beat the student's own plan"}}
                 )
-        violations = tools.check_invariants(track, final_course_numbers, passed, failed)
+        violations = tools.check_invariants(
+            track, final_course_numbers, passed, failed, approved_retake_course=state.get("approved_retake_course")
+        )
         if violations:
             seen = set()
             final_course_numbers = [
@@ -1184,6 +1294,42 @@ def run_agent_turn_v2(
         tool_log.append(
             {"name": "forced_wrapup", "args": {"reason": stopped_reason}, "result": last_verify_result}
         )
+
+    # Final safety net, regardless of which path got here: issue_budget_pushback
+    # only retries twice, then accepts whatever the model delivers even if the
+    # delivery standard ("never acceptable" - low credits, exam clashes,
+    # overlaps) is still violated. Found live: an 8-credit plan and a 1-day
+    # exam gap both reached a student this way. If a genuinely better
+    # candidate was verified earlier THIS SAME turn, prefer it over knowingly
+    # accepting a worse one - never invents a new plan, only picks among ones
+    # already checked.
+    current_issues = (last_verify_result or {}).get("issues", [])
+    current_lazy = [i["reason"] for i in current_issues if "excluded weekday" not in i["reason"]]
+    if (current_lazy or len(current_issues) > 2) and best_verified_plan:
+        swap_candidate = [
+            c for c in best_verified_plan if c not in requested_removals and c not in passed and c in track.courses
+        ]
+        if swap_candidate and set(swap_candidate) != set(final_course_numbers):
+            swap_score = _plan_score(best_verify_result, swap_candidate, previous_plan)
+            current_score = _plan_score(last_verify_result, final_course_numbers, previous_plan)
+            if swap_score > current_score:
+                final_course_numbers = swap_candidate
+                last_verify_result = tools.verify_plan(
+                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+                )
+                issues = last_verify_result.get("issues", [])
+                issues_sentence = (
+                    " Everything checks out." if not issues
+                    else " Still open: " + "; ".join(i["reason"] for i in issues) + "."
+                )
+                final_explanation = (
+                    f"Switched to a better-verified alternative before delivering "
+                    f"({len(final_course_numbers)} course(s), "
+                    f"{last_verify_result.get('total_credits', 0)} credits) - the plan initially reached "
+                    "was still short of the delivery standard even after correction attempts."
+                    + issues_sentence
+                )
+                tool_log.append({"name": "final_safety_swap", "args": {}, "result": last_verify_result})
 
     # An empty plan should never be silently handed to the student - if the
     # delivered/corrected list came out empty but the model verified a real
@@ -1288,6 +1434,26 @@ def run_agent_turn_v2(
                 "it's no longer offered this semester, even though the cached course data said otherwise."
             )
 
+    # Deterministic backstop, not left to the model to remember: live
+    # testing showed the model reliably filling in deliver_plan's
+    # proposed_retake WITHOUT actually asking the matching question in the
+    # explanation prose (or vice versa) - a silent proposal the student
+    # never sees is worse than no proposal at all, since it just look like
+    # the agent's supposed to answer "yes" to nothing. If the field is set,
+    # the question WILL appear, regardless of what the model wrote.
+    if new_proposed_retake and new_proposed_retake.get("course_number") not in final_course_numbers:
+        retake_number = new_proposed_retake.get("course_number")
+        retake_name = (
+            track.courses[retake_number]["name"] if retake_number in track.courses else retake_number
+        )
+        if retake_name not in final_explanation:
+            final_explanation += (
+                f" One more thing: your grade in {retake_name} was notably below the comparison "
+                f"averages - want me to add a retake of it to your plan next time?"
+            )
+    else:
+        new_proposed_retake = None  # contradicted or malformed - never carry a broken proposal forward
+
     verify_result = last_verify_result or {"pass": False, "total_credits": 0, "workload_score": 0, "issues": []}
     exam_dates = tools.fetch_exam_dates(track, final_course_numbers) if final_course_numbers else {}
     cheesefork = tools.summarize_cheesefork(track, final_course_numbers) if final_course_numbers else {}
@@ -1367,5 +1533,11 @@ def run_agent_turn_v2(
             # "what did you last recommend?" directly - see previous_explanation
             # in _system_prompt.
             "previous_explanation": plan_result.get("explanation"),
+            # A grade-improvement retake proposed THIS turn (or None) - the
+            # next turn's extraction checks this against the student's
+            # response to resolve approved_grade_retake. Deliberately
+            # replaces (never stacks with) whatever was pending before -
+            # see the plan's "resolved within one turn boundary" design.
+            "proposed_retake": new_proposed_retake,
         },
     }

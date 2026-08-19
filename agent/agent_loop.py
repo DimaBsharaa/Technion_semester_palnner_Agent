@@ -240,7 +240,12 @@ def _foundation_text(track_id: str) -> str:
     return "\n".join(lines)
 
 
-def _extract_student_state(track: Track, messages: list[dict], known_state: dict | None = None) -> tuple[dict, float]:
+def _extract_student_state(
+    track: Track,
+    messages: list[dict],
+    known_state: dict | None = None,
+    proposed_retake: dict | None = None,
+) -> tuple[dict, float]:
     known_state_note = ""
     if known_state:
         known_state_note = f"""
@@ -257,6 +262,19 @@ message was added, and do not ask about anything already settled here:
 Only the specific thing the student's newest message actually addresses \
 should change - e.g. a message adding one new exam-date conflict should \
 update constraints/notes only, not reset passed_courses or semester_number."""
+
+    if proposed_retake:
+        known_state_note += f"""
+
+Last turn, you (the advisor) proposed a grade-improvement retake of \
+{proposed_retake.get("name")} ({proposed_retake.get("course_number")}) and \
+asked the student whether to include it. Check the student's latest \
+message: if it CLEARLY accepts (e.g. "yes", "add it", "let's retake it", \
+"sure"), set "approved_grade_retake" to "{proposed_retake.get("course_number")}". \
+If they decline, ignore it, or talk about something else, leave \
+"approved_grade_retake" empty - never guess acceptance from silence or an \
+unrelated reply, and never treat this as a reason to ask about it again \
+yourself."""
 
     system = {
         "role": "system",
@@ -309,12 +327,23 @@ explicitly states a numeric grade for a specific course in their message \
 opportunistic: never ask for a grade, never infer one, never put anything \
 grade-related in missing_fields or clarifying_question - a plan can always \
 be built with zero grades known. Omit a course entirely rather than \
-guessing its grade.
+guessing its grade. CRITICAL - a grade can never float on its own: every \
+course number that appears here MUST ALSO appear in passed_courses (grade \
+>= 55) or failed_courses (grade < 55), using the EXACT SAME course number \
+in both places - resolve the course name once and use that same number \
+everywhere it's mentioned in this message, not a different guess per \
+field. A grade recorded against a course absent from both lists is a bug: \
+it can never be compared against anything.
 - "remove_courses": real 8-digit course numbers the student explicitly \
 asked to REMOVE, REPLACE, or SWAP OUT of their existing plan in their \
 LATEST message (resolve names to numbers via the catalog above). Empty \
 list when they aren't asking to remove anything - this is only for \
 explicit change requests against a plan they already received.
+- "approved_grade_retake": the 8-digit course number ONLY when a specific \
+grade-improvement retake was proposed to the student last turn (see below) \
+AND their latest message clearly accepts it. null otherwise. Never set \
+this unless a proposal was actually made - see the note below for exactly \
+which course, if any.
 - "intent": "question" ONLY when the latest message is purely asking for \
 information or opinion ("is X hard?", "what do students say about Y?", \
 "which is easier, A or B?") with NO request to build or change a plan; \
@@ -400,6 +429,24 @@ def _normalize_state(state: dict) -> dict:
     state["failed_courses"] = [str(c).zfill(8) for c in (state.get("failed_courses") or [])]
     state["remove_courses"] = [str(c).zfill(8) for c in (state.get("remove_courses") or [])]
     state["grades"] = {str(c).zfill(8): g for c, g in (state.get("grades") or {}).items()}
+    # Deterministic backstop, not left to the extraction prompt alone: a
+    # grade recorded against a course absent from both passed/failed is
+    # inert everywhere downstream (analyze_grade_improvement_candidates
+    # only ever looks at courses already in passed_courses) - found live,
+    # a real grade silently went nowhere because the model tagged the
+    # grade to a course number it never also added to passed_courses. 55
+    # is Technion's own stated minimum passing grade (same threshold
+    # transcript_parser.py uses).
+    passed_set = set(state["passed_courses"])
+    failed_set = set(state["failed_courses"])
+    for course_number, grade in state["grades"].items():
+        if course_number in passed_set or course_number in failed_set:
+            continue
+        (passed_set if grade >= 55 else failed_set).add(course_number)
+    state["passed_courses"] = sorted(passed_set)
+    state["failed_courses"] = sorted(failed_set)
+    approved_retake = state.get("approved_grade_retake")
+    state["approved_grade_retake"] = str(approved_retake).zfill(8) if approved_retake else None
     state["intent"] = state.get("intent") if state.get("intent") in ("plan", "question") else "plan"
     state["question_courses"] = [str(c).zfill(8) for c in (state.get("question_courses") or [])]
 
@@ -626,8 +673,12 @@ def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[
     both rather than needing to be duplicated and kept in sync."""
     failed = set(state["failed_courses"])
     semester_number = state.get("semester_number") or 0
+    # Same buffer/cutoff as tools.assess_progress - kept identical
+    # deliberately so the two never contradict each other in the same
+    # response (progress display vs. what's actually excluded from the
+    # plan). See tools.EXPECTED_BY_NOW_BUFFER for the reasoning/evidence.
     expected_by_now = {
-        c for c, d in track.mandatory_prereq_depths.items() if d <= semester_number - 2
+        c for c, d in track.mandatory_prereq_depths.items() if d <= semester_number - tools.EXPECTED_BY_NOW_BUFFER
     } - failed
     # Choose-one-variant requirements due by now: mark ALL variants passed
     # (we can't know which one the student took, and later prerequisites
@@ -635,7 +686,7 @@ def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[
     # one as failed.
     for group in track.mandatory_choice_groups:
         options = set(group["options"])
-        if group["depth"] <= semester_number - 2 and not (options & failed):
+        if group["depth"] <= semester_number - tools.EXPECTED_BY_NOW_BUFFER and not (options & failed):
             expected_by_now |= options
     auto_passed = set(expected_by_now)
     for c in expected_by_now:
@@ -658,10 +709,18 @@ def resolve_verify_kwargs(state: dict) -> dict:
     override_minimums = state["constraints"].get("override_minimums", False)
     pace = state["constraints"].get("pace")
     if override_minimums:
-        return {"min_credits": 0, "min_mandatory_courses": 0}
-    if pace == "light":
-        return {"min_credits": tools.LIGHT_PACE_MIN_CREDITS, "max_credits": tools.LIGHT_PACE_MAX_CREDITS}
-    return {"min_credits": tools.DEFAULT_MIN_CREDITS, "max_credits": tools.DEFAULT_MAX_CREDITS}
+        kwargs = {"min_credits": 0, "min_mandatory_courses": 0}
+    elif pace == "light":
+        kwargs = {"min_credits": tools.LIGHT_PACE_MIN_CREDITS, "max_credits": tools.LIGHT_PACE_MAX_CREDITS}
+    else:
+        kwargs = {"min_credits": tools.DEFAULT_MIN_CREDITS, "max_credits": tools.DEFAULT_MAX_CREDITS}
+    # The one narrow exception to "never re-include a passed course" -
+    # flows into every verify_plan call (model-callable tool AND the
+    # post-loop backstop) via this shared kwargs dict, so it needs no
+    # separate threading anywhere else. See tools.verify_plan's docstring.
+    if state.get("approved_retake_course"):
+        kwargs["approved_retake_course"] = state["approved_retake_course"]
+    return kwargs
 
 
 _REPAIR_STRATEGIES = {

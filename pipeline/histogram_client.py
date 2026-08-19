@@ -2,7 +2,7 @@
 Client for technion-histograms - per-course grade distribution summaries
 (github.com/michael-maltsev/technion-histograms), used to compare a
 student's own grade in a passed course against how the course actually
-graded historically (see agent/tools.py's suggest_grade_improvements).
+graded historically (see agent/tools.py's analyze_grade_improvement_candidates).
 
 The project publishes a static site on its `gh-pages` branch, one directory
 per 8-digit course number, each containing an index.min.json shaped like:

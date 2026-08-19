@@ -29,17 +29,17 @@ DEFAULT_MIN_EXAM_GAP_DAYS = 3
 DEFAULT_WORKLOAD_CAP = 80  # 0-100 scale; see _workload_score
 DEFAULT_MIN_MANDATORY_COURSES = 3  # a semester carrying only 1-2 mandatory courses wastes a term
 
+# How many semesters of buffer beyond a course's prereq depth before it's
+# assumed already completed (assess_progress / backfill_passed_courses).
+# Was 2 - live testing found real semester-3+ mandatory courses sitting at
+# depth 1 (shallow prereq chain, but NOT actually an early-semester course
+# in Technion's real curriculum), silently excluded from every plan as a
+# result. See assess_progress's docstring for the full evidence.
+EXPECTED_BY_NOW_BUFFER = 3
+
 # CheeseFork's difficultyRank is 1-5; bucket boundaries for summarize_cheesefork.
 _LIGHT_MAX = 2.5
 _MEDIUM_MAX = 3.75
-
-# How far below a course's historical average grade (technion-histograms)
-# counts as "notably below peers" for suggest_grade_improvements - a
-# statistical judgment call, NOT a claim about Technion's actual
-# grade-improvement (שיפור ציון) retake-eligibility policy, which has its
-# own rules this codebase doesn't implement or verify. See that function's
-# docstring before changing this.
-GRADE_IMPROVEMENT_GAP_THRESHOLD = 10
 
 
 def search_courses(track: Track, query: str) -> list[dict]:
@@ -92,15 +92,26 @@ def _prereq_satisfied(tree: dict | None, passed: set[str]) -> bool:
 def assess_progress(track: Track, semester_number: int, passed_courses: list[str]) -> dict:
     """The first diagnostic step, before anything else: how does this
     student's actual completion compare to a normal student at this point
-    in the track? Since courses at prerequisite-depth D are typically not
-    reachable before roughly semester D+2 (one semester per prerequisite
-    layer, plus the first semester itself), a student in semester N should
-    typically have finished depth <= N-2. Approximate on purpose - see
-    Track._compute_mandatory_prereq_depths.
+    in the track?
+
+    "depth" is a PREREQUISITE-GRAPH property (how many prerequisite hops
+    deep a course sits), not a real semester-sequence number - it's a
+    proxy, and a confirmed-wrong one at the old N-2 cutoff: live testing
+    found real semester-3-and-later mandatory courses (Software
+    Engineering, DB Management, Deterministic Models, the Economics
+    requirement) sitting at depth 1, meaning they'd be silently assumed
+    ALREADY DONE by semester 3 under the old formula - a shallow
+    prerequisite chain does not mean Technion's real curriculum schedules
+    a course that early; pacing/credit-balancing spreads mandatory courses
+    across many semesters independent of how few prerequisites they need.
+    EXPECTED_BY_NOW_BUFFER widens that gap - still an approximation (there
+    is no real per-semester program-sequence data in this codebase, see
+    docs/enhancement-checklist.md item 4's DDS-diagram note), but a
+    meaningfully less aggressive one, calibrated against that live evidence.
     """
     passed = set(passed_courses)
     depths = track.mandatory_prereq_depths
-    expected_completed = {c for c, d in depths.items() if d <= semester_number - 2}
+    expected_completed = {c for c, d in depths.items() if d <= semester_number - EXPECTED_BY_NOW_BUFFER}
     missing_vs_expected = sorted(
         {c: track.courses[c]["name"] for c in (expected_completed - passed) if c in track.courses}.items()
     )
@@ -108,10 +119,10 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
     # due when the group's earliest variant sits at an expected-done depth
     # and NO variant was passed.
     for group in track.mandatory_choice_groups:
-        if group["depth"] <= semester_number - 2 and not (set(group["options"]) & passed):
+        if group["depth"] <= semester_number - EXPECTED_BY_NOW_BUFFER and not (set(group["options"]) & passed):
             missing_vs_expected.append((group["options"][0], f"{group['label']} (one of these is required)"))
     ahead_of_schedule = sorted(
-        c for c in passed if c in depths and depths[c] > semester_number - 2
+        c for c in passed if c in depths and depths[c] > semester_number - EXPECTED_BY_NOW_BUFFER
     )
 
     if len(missing_vs_expected) >= 3:
@@ -294,22 +305,43 @@ def summarize_cheesefork(track: Track, course_numbers: list[str]) -> dict:
     return result
 
 
-def suggest_grade_improvements(track: Track, passed_courses: list[str], grades: dict) -> list[dict]:
-    """Flags a passed course as a CANDIDATE (never a requirement, never
-    added to any plan) for a grade-improvement retake, when the student's
-    own grade is notably below that course's historical average
-    (technion-histograms, see pipeline/histogram_client.py).
+def analyze_grade_improvement_candidates(track: Track, passed_courses: list[str], grades: dict) -> list[dict]:
+    """Raw comparison data for the model to REASON about - not a verdict.
+    For each passed course with a known grade, reports it against TWO
+    baselines: the course's own historical average (technion-histograms,
+    see pipeline/histogram_client.py) and the student's OWN average across
+    every grade known about them. A 70 means something very different for
+    a student who otherwise averages 90 than for one who averages 72 - a
+    single fixed threshold against the course average alone (the previous
+    version of this function) couldn't see that difference; this hands
+    both numbers over and leaves the judgment call - whether either gap is
+    actually meaningful, combined with whatever review sentiment the model
+    separately checks via summarize_cheesefork - to the model itself.
 
-    Advisory only. Technion's real grade-improvement policy (שיפור ציון)
-    has its own eligibility rules - which courses qualify, how many
-    attempts are allowed, which grade counts, time limits - that are NOT
-    implemented or verified here. Never claim guaranteed eligibility; the
-    caller (the system prompt) is responsible for framing this as a
-    dismissible suggestion, not a rule the agent applied.
+    The only filtering done here is noise reduction, not a suggestion
+    decision: a course where the grade is at or above BOTH baselines is
+    dropped, since there is no plausible improvement story for it. Nothing
+    stronger than that - a course below only ONE baseline still surfaces,
+    with both numbers shown, not hidden.
+
+    Advisory data only. Technion's real grade-improvement policy (שיפור
+    ציון) has its own eligibility rules - which courses qualify, how many
+    attempts allowed, which grade counts, time limits - that are NOT
+    implemented or verified here; the caller (the system prompt) is
+    responsible for framing anything built on this as a dismissible
+    suggestion the student must explicitly accept, never a rule the agent
+    applied on its own.
 
     Silently skips (not an error) any course with no known grade or no
     historical grade_stats - most electives won't have both, and that's
-    the expected common case, not a failure."""
+    the expected common case, not a failure. Returns [] entirely when
+    `grades` is empty - this function is never a reason to ask a student
+    for a grade they haven't volunteered."""
+    if not grades:
+        return []
+    known_grades = list(grades.values())
+    your_own_average = round(sum(known_grades) / len(known_grades), 1)
+
     out = []
     for c in passed_courses:
         grade = grades.get(c)
@@ -318,17 +350,20 @@ def suggest_grade_improvements(track: Track, passed_courses: list[str], grades: 
         stats = track.courses[c].get("grade_stats")
         if not stats:
             continue
-        gap = stats["avg_grade"] - grade
-        if gap >= GRADE_IMPROVEMENT_GAP_THRESHOLD:
-            out.append(
-                {
-                    "course_number": c,
-                    "name": track.courses[c]["name"],
-                    "your_grade": grade,
-                    "course_average": stats["avg_grade"],
-                    "gap": round(gap, 1),
-                }
-            )
+        course_average = stats["avg_grade"]
+        if grade >= course_average and grade >= your_own_average:
+            continue  # no plausible improvement story either way - noise, not a decision
+        out.append(
+            {
+                "course_number": c,
+                "name": track.courses[c]["name"],
+                "your_grade": grade,
+                "course_average": course_average,
+                "your_own_average": your_own_average,
+                "gap_vs_course_average": round(course_average - grade, 1),
+                "gap_vs_your_average": round(your_own_average - grade, 1),
+            }
+        )
     return out
 
 
@@ -833,7 +868,11 @@ def prereq_unmet_in(track: Track, plan_course_numbers: list[str], passed_courses
 
 
 def check_invariants(
-    track: Track, plan_course_numbers: list[str], passed_courses: list[str], failed_courses: list[str]
+    track: Track,
+    plan_course_numbers: list[str],
+    passed_courses: list[str],
+    failed_courses: list[str],
+    approved_retake_course: str | None = None,
 ) -> list[str]:
     """A deterministic backstop, separate from verify_plan's plan-quality
     checks (schedule, credits, workload): these are data-integrity
@@ -844,6 +883,13 @@ def check_invariants(
     written to catch, found via live testing - is a state-integrity bug,
     not a scheduling trade-off, so it's checked here rather than left to
     the drafting model to notice.
+
+    approved_retake_course: the ONE narrow, explicit exception - a passed
+    course the student just explicitly approved retaking for grade
+    improvement this turn (see agent_react_loop.py's proposed_retake /
+    approved_grade_retake flow). Every OTHER passed course still triggers
+    this check exactly as before; this is a single-course, single-turn
+    carve-out, never a general loophole.
 
     Returns a list of plain-language violation strings; empty means clean.
     This function raises nothing and calls no other tool - callers decide
@@ -858,7 +904,9 @@ def check_invariants(
     if overlap:
         violations.append(f"course(s) {sorted(overlap)} are marked both passed and failed - contradictory state")
 
-    already_passed_in_plan = [c for c in plan_course_numbers if c in passed]
+    already_passed_in_plan = [
+        c for c in plan_course_numbers if c in passed and c != approved_retake_course
+    ]
     if already_passed_in_plan:
         violations.append(f"plan re-includes already-passed course(s) {sorted(already_passed_in_plan)}")
 
@@ -884,6 +932,7 @@ def verify_plan(
     min_credits: float = DEFAULT_MIN_CREDITS,
     max_credits: float = DEFAULT_MAX_CREDITS,
     min_mandatory_courses: int = DEFAULT_MIN_MANDATORY_COURSES,
+    approved_retake_course: str | None = None,
 ) -> dict:
     """The critic: checks a candidate plan against prerequisites, semester
     offering, credit range, day-of-week constraints, exam spacing, workload
@@ -894,7 +943,12 @@ def verify_plan(
     The mandatory-course and credit floors are enforced here, not just
     suggested in the drafting prompt - a rule that must actually hold
     belongs in deterministic code, the same lesson that applies to every
-    other check in this function."""
+    other check in this function.
+
+    approved_retake_course: same single-course, single-turn exception as
+    check_invariants - a passed course the student just explicitly approved
+    retaking for grade improvement. Every other passed course still fails
+    this check exactly as before."""
     excluded_weekdays = set(excluded_weekdays or [])
     passed = set(passed_courses)
     issues = []
@@ -905,7 +959,7 @@ def verify_plan(
 
     for c in plan_course_numbers:
         course = track.courses[c]
-        if c in passed:
+        if c in passed and c != approved_retake_course:
             issues.append({"course": c, "reason": "already passed - can't be retaken or counted again"})
         if not course["offered_next_semester"]:
             issues.append({"course": c, "reason": f"not offered in {track.target_semester}"})
