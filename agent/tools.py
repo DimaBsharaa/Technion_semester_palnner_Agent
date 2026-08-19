@@ -172,6 +172,13 @@ def get_intake_options(track: Track) -> dict:
         "mandatory_courses": mandatory,
         "weekdays": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         "pace_options": ["light", "normal", "fast"],
+        # The frontend's own "expected done by now" checklist filter must
+        # use this SAME number, not a hardcoded copy of its own - found
+        # live: EXPECTED_BY_NOW_BUFFER was recalibrated from 2 to 3 here,
+        # but a second, independent "- 2" hardcoded in site/index.html was
+        # never updated, so the checklist silently drifted out of sync with
+        # what assess_progress/backfill_passed_courses actually use.
+        "expected_by_now_buffer": EXPECTED_BY_NOW_BUFFER,
     }
 
 

@@ -2033,9 +2033,10 @@ inputEl.addEventListener('keydown', (e) => {
 // reliable part of the whole pipeline (an LLM guessing course names/numbers
 // from typed text) for the one question that's really just a fixed choice.
 // The checklist itself only shows courses a student at this semester should
-// already have finished (same depth<=semester-2 cutoff assess_progress
-// uses) - defaulted to "Passed", so the interaction is just "flag the
-// exceptions" rather than reviewing every course in the degree.
+// already have finished (same depth<=semester-buffer cutoff assess_progress
+// uses server-side, buffer value fetched from /intake-options) - defaulted
+// to "Passed", so the interaction is just "flag the exceptions" rather than
+// reviewing every course in the degree.
 
 let selectedTrackId = null;
 let intakeOptions = null;
@@ -2154,11 +2155,16 @@ function renderCourseChecklist() {
   const el = document.getElementById('courseChecklist');
   el.innerHTML = '';
 
-  // Only show courses expected done by now (depth <= semester-2, the same
-  // cutoff assess_progress uses) - a student isn't asked about courses they
-  // haven't reached yet at all, only to flag exceptions among ones they
-  // should already have finished.
-  const expectedByNow = intakeOptions.mandatory_courses.filter((c) => c.depth <= selectedSemester - 2);
+  // Only show courses expected done by now (depth <= semester - buffer, the
+  // SAME cutoff assess_progress uses server-side) - a student isn't asked
+  // about courses they haven't reached yet at all, only to flag exceptions
+  // among ones they should already have finished. The buffer comes from
+  // the backend (tools.EXPECTED_BY_NOW_BUFFER) rather than being a second
+  // hardcoded copy here - a prior mismatch (this file said "-2", the
+  // backend had since been recalibrated to 3) silently showed/hid the
+  // wrong courses in this exact checklist.
+  const buffer = intakeOptions.expected_by_now_buffer ?? 3;
+  const expectedByNow = intakeOptions.mandatory_courses.filter((c) => c.depth <= selectedSemester - buffer);
 
   if (expectedByNow.length === 0) {
     el.textContent = "No required courses are expected done yet at this semester - you're all caught up by default.";
