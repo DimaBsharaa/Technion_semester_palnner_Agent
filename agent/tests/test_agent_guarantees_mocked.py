@@ -509,6 +509,55 @@ finally:
     script_deliver_light_plan.verified = False
 
 
+# --- Test 10: an approved grade-improvement retake is hard-enforced, not just nudged ---
+# Found live: extraction correctly resolved a self-requested retake and set
+# state["approved_retake_course"], the one-shot nudge fired, and the model
+# STILL delivered without it on the second attempt - the exact same
+# reliability gap every other explicit student directive already got a
+# hard backstop for tonight (requested_add_courses, credit floor,
+# mandatory count). This checks the second-violation enforcement directly.
+print("--- approved grade-improvement retake is hard-enforced after the nudge ---")
+
+RETAKE_TARGET = "00960570"  # already in state_with_prereqs_for_strong()'s passed_courses
+NO_RETAKE_PLAN = ["03940804"]
+
+
+def script_stubbornly_omit_approved_retake(_messages):
+    n = getattr(script_stubbornly_omit_approved_retake, "n", 0)
+    script_stubbornly_omit_approved_retake.n = n + 1
+    if n == 0:
+        return msg([tool_call("verify_plan", {"plan_course_numbers": NO_RETAKE_PLAN})]), 0.0
+    # Never includes the approved retake, no matter how many times pushed.
+    return msg([tool_call("deliver_plan", {"course_numbers": NO_RETAKE_PLAN, "explanation": "here"})]), 0.0
+
+
+retake_state = state_with_prereqs_for_strong()
+# state["approved_retake_course"] is recomputed unconditionally at the top
+# of run_agent_turn_v2 (never trusts a bare state_override value - see its
+# own comment about not trusting a hallucinated approval) - set it via
+# requested_retake_course instead, the real mechanism, same as the
+# self-requested-retake test above.
+retake_state["requested_retake_course"] = RETAKE_TARGET
+
+arl._call_with_tools = script_stubbornly_omit_approved_retake
+_tools.verify_plan = stub_verify_pass_any_credits
+_tools.check_invariants = lambda *a, **k: []
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=retake_state)
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    check("approved_retake_missing_nudge" in names, "nudge fired on the first violation")
+    check("approved_retake_enforced" in names, "enforced in code after the model ignored the nudge too")
+    check(RETAKE_TARGET in delivered, "the approved retake IS in the final delivered plan")
+    retake_row = next((c for c in res["plan_result"]["courses"] if c["course_number"] == RETAKE_TARGET), None)
+    check(retake_row is not None and retake_row["is_retake"], "the RETAKE badge shows for a grade-improvement retake too")
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+    script_stubbornly_omit_approved_retake.n = 0
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")

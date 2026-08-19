@@ -1031,32 +1031,57 @@ def run_agent_turn_v2(
                 # course list doesn't include it - live testing showed this
                 # happening even with the exception clearly stated in the
                 # system prompt (a "may include" instruction alone wasn't
-                # reliably acted on). One-shot nudge, same pattern as the
-                # removal/verify nudges above: give the model one real
-                # chance to either include it or explicitly explain why it
-                # genuinely can't (a real schedule/prereq conflict is a
-                # legitimate reason - this is a nudge, not a blind force).
+                # reliably acted on). First violation: one real chance to
+                # either include it or explicitly explain why it genuinely
+                # can't (a real schedule/prereq conflict is legitimate).
+                # Second violation: enforce in code, same as requested_adds
+                # above - live testing found the model still omitting it
+                # even after the nudge, with no conflict named at all, so
+                # this needed the same hard-requirement treatment every
+                # other explicit student directive already gets tonight.
+                # Guarded on offered_next_semester too: an approval naming a
+                # course that isn't actually offered (e.g. extraction
+                # resolved a student's mention to a stale/duplicate course
+                # number - found live: "Discrete Math" resolving to a
+                # confusable second course number instead of the real one)
+                # must never get force-included just because it's
+                # "approved" - the nudge/force below only ever applies to a
+                # genuinely registerable course.
                 approved = state.get("approved_retake_course")
-                if approved and approved not in candidate and not approved_retake_pushed and step < MAX_STEPS - 2:
-                    approved_retake_pushed = True
-                    approved_name = track.courses[approved]["name"] if approved in track.courses else approved
-                    tool_log.append(
-                        {"name": "approved_retake_missing_nudge", "args": {}, "result": {"course_number": approved}}
-                    )
-                    react_messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "content": (
-                                f"Not delivered: the student just explicitly approved retaking "
-                                f"{approved_name} ({approved}) for grade improvement, but it's not in "
-                                "this course list. Add it and re-verify, unless there's a genuine "
-                                "scheduling or prerequisite conflict that makes it truly impossible - "
-                                "if so, deliver without it but say so plainly in the explanation."
-                            ),
-                        }
-                    )
-                    continue
+                if approved and not track.courses.get(approved, {}).get("offered_next_semester"):
+                    approved = None
+                if approved and approved not in candidate:
+                    if not approved_retake_pushed and step < MAX_STEPS - 2:
+                        approved_retake_pushed = True
+                        approved_name = track.courses[approved]["name"] if approved in track.courses else approved
+                        tool_log.append(
+                            {"name": "approved_retake_missing_nudge", "args": {}, "result": {"course_number": approved}}
+                        )
+                        react_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": (
+                                    f"Not delivered: the student just explicitly approved retaking "
+                                    f"{approved_name} ({approved}) for grade improvement, but it's not in "
+                                    "this course list. Add it and re-verify, unless there's a genuine "
+                                    "scheduling or prerequisite conflict that makes it truly impossible - "
+                                    "if so, deliver without it but say so plainly in the explanation."
+                                ),
+                            }
+                        )
+                        continue
+                    if approved_retake_pushed:
+                        droppable = sorted(
+                            (c for c in candidate if c not in track.mandatory_course_numbers and c != approved),
+                            key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
+                        )
+                        if droppable:
+                            candidate = [c for c in candidate if c != droppable[0]]
+                        candidate = candidate + [approved]
+                        tool_log.append(
+                            {"name": "approved_retake_enforced", "args": {}, "result": {"course_number": approved}}
+                        )
 
                 final_explanation = args.get("explanation") or ""
                 course_reasons = args.get("course_reasons") or {}
@@ -1845,7 +1870,11 @@ def run_agent_turn_v2(
                 "course_number": c,
                 "name": track.courses[c]["name"],
                 "points": track.courses[c]["points"],
-                "is_retake": c in failed,
+                # A failed-course retake and an approved grade-improvement
+                # retake (an already-PASSED course, deliberately retaken) are
+                # both real retakes to the student - the RETAKE badge should
+                # show for either, not just the failed case.
+                "is_retake": c in failed or c == state.get("approved_retake_course"),
                 "is_mandatory": c in track.mandatory_course_numbers,
                 "schedule": track.courses[c]["schedule"],
                 # The coordinated section assignment - one coherent group
