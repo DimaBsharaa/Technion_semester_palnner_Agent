@@ -2044,7 +2044,7 @@ let selectedTrackId = null;
 let intakeOptions = null;
 let intakeOptionsPromise = null;
 let knownState = {}; // backend's partial state, from the last needs_input response
-let selectedSemester = 4;
+let selectedSemester = null; // no default guess - see renderGapFillPanel
 let selectedWeekdays = new Set();
 let selectedPace = 'normal';
 let courseStatus = {}; // course_number -> 'passed' | 'failed'
@@ -2111,12 +2111,16 @@ function renderSemesterToggle() {
   el.innerHTML = '';
   for (let s = 1; s <= 8; s++) {
     const btn = document.createElement('button');
+    // No button is "active" when selectedSemester is null - nothing is
+    // pre-selected until the student actually picks one, or already told
+    // us via their own message.
     btn.className = `toggle-btn${s === selectedSemester ? ' active' : ''}`;
     btn.textContent = s;
     btn.addEventListener('click', () => {
       selectedSemester = s;
       renderSemesterToggle();
       renderCourseChecklist();
+      updateGapSubmitState();
     });
     el.appendChild(btn);
   }
@@ -2156,6 +2160,15 @@ function renderPaceToggle() {
 function renderCourseChecklist() {
   const el = document.getElementById('courseChecklist');
   el.innerHTML = '';
+
+  // Semester genuinely unknown yet (not "not selected", "not answered at
+  // all") - don't run the comparison below with a null semester, which
+  // would silently show zero courses and read as "you're all caught up",
+  // a false claim when the real reason is just "pick a semester first."
+  if (selectedSemester == null) {
+    el.textContent = 'Pick which semester you\'re starting above first.';
+    return;
+  }
 
   // Wider than the server's own auto-backfill cutoff (tools.
   // EXPECTED_BY_NOW_BUFFER) on purpose: that buffer decides what to
@@ -2279,7 +2292,14 @@ async function renderGapFillPanel(needsInput) {
     await intakeOptionsPromise;
   }
 
-  selectedSemester = knownState.semester_number || selectedSemester || 4;
+  // Found live: this used to fall back to a hardcoded "4" when nothing was
+  // known yet, which pre-highlighted a semester button as if the student
+  // had already confirmed it - the same "silently assumed" complaint as
+  // the course checklist, just for the semester picker instead. Now stays
+  // null (nothing highlighted) until the student actually clicks one, or
+  // until a REAL known value exists (their own prior answer, or the
+  // model's own extraction from something they actually said).
+  selectedSemester = knownState.semester_number || null;
   selectedWeekdays = new Set((knownState.constraints && knownState.constraints.excluded_weekdays) || []);
   selectedPace = (knownState.constraints && knownState.constraints.pace) || 'normal';
   touchedCourses = new Set();
@@ -2304,6 +2324,20 @@ async function renderGapFillPanel(needsInput) {
   if (missing.has('courses')) renderCourseChecklist();
 
   document.getElementById('gapFillPanel').style.display = 'block';
+  updateGapSubmitState();
+}
+
+// Semester is the one field genuinely unsafe to submit with no answer -
+// unlike pace ("normal" is a reasonable default) or weekdays (empty just
+// means no restriction), a wrong or blank semester steers the whole plan
+// toward the wrong courses. Blocks Continue until it's actually picked,
+// rather than silently sending null/undefined.
+function updateGapSubmitState() {
+  const missing = new Set(knownState.missing_fields || []);
+  const submitBtn = document.getElementById('gapSubmit');
+  const needsSemester = missing.has('semester_number') && selectedSemester == null;
+  submitBtn.disabled = needsSemester;
+  submitBtn.title = needsSemester ? 'Pick which semester you\'re starting first' : '';
 }
 
 document.getElementById('gapSubmit').addEventListener('click', async () => {
