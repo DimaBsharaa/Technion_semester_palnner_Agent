@@ -116,8 +116,19 @@ print("--- best verified plan wins a forced wrap-up ---")
 
 # Two elective-only plans that survive the passed/failed backfill (they are
 # never auto-marked passed), with verify_plan stubbed so STRONG passes and
-# WEAK fails - isolating the "best wins, not most-recent" selection.
-STRONG = ["03940804", "00970249", "03940582"]
+# WEAK fails - isolating the "best wins, not most-recent" selection. STRONG
+# includes 3 real mandatory courses (00940241/00940314/00940424) that are
+# BOTH unlocked AND not already auto-backfilled as passed for this state's
+# semester_number=4 (verified against backfill_passed_courses's real
+# output, not just prereq depth - a shallower course can still get
+# auto-marked passed by the EXPECTED_BY_NOW_BUFFER heuristic) and don't
+# collide on the schedule - so STRONG already clears
+# tools.DEFAULT_MIN_MANDATORY_COURSES on its own. Otherwise the
+# mandatory-course top-up backstop (added after a live bug: filler
+# electives delivered instead of available mandatory courses) would modify
+# this plan, breaking this test's exact-match assertions, which are about
+# best-plan SELECTION, not that specific backstop.
+STRONG = ["03940804", "00970249", "03940582", "00940241", "00940314", "00940424"]
 WEAK = ["03940804"]
 
 import tools as _tools  # noqa: E402
@@ -308,6 +319,49 @@ try:
 finally:
     arl._call_with_tools = orig
     script_deliver_retake_plan.verified = False
+
+
+# --- Test 6: mandatory-course top-up backstop ---
+# Found live: a plan can pass credit/workload checks while carrying almost
+# no real degree progress - the model delivered 2 filler electives
+# (orchestra, an entrepreneurship elective) instead of two ALREADY-UNLOCKED
+# real mandatory courses, with verify_plan's own "only 1 mandatory
+# course(s), expected at least 3" issue printed right in the explanation
+# and delivered anyway. This checks the backstop directly: an elective-only
+# delivery gets topped up with genuinely available mandatory courses before
+# it ever reaches the student.
+print("--- mandatory-course top-up backstop ---")
+
+FILLER_ONLY = ["03940804"]  # a single no-exam elective, no real degree progress
+
+
+def script_deliver_filler_only(_messages):
+    if not getattr(script_deliver_filler_only, "verified", False):
+        script_deliver_filler_only.verified = True
+        return msg([tool_call("verify_plan", {"plan_course_numbers": FILLER_ONLY})]), 0.0
+    return msg([tool_call("deliver_plan", {"course_numbers": FILLER_ONLY, "explanation": "light semester"})]), 0.0
+
+
+def stub_verify_always_pass(track_, plan, passed_, **kw):
+    return {"pass": True, "total_credits": 18.0, "workload_score": 50.0, "issues": []}
+
+
+arl._call_with_tools = script_deliver_filler_only
+_tools.verify_plan = stub_verify_always_pass
+_tools.check_invariants = lambda *a, **k: []
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=base_state())
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    mandatory_delivered = [c for c in delivered if c in track.mandatory_course_numbers]
+    check("mandatory_topup_enforced" in names, "top-up backstop fired on an elective-only delivery")
+    check(len(mandatory_delivered) >= 3, "the delivered plan now carries real mandatory courses, not just filler")
+    check("03940804" in delivered, "the original elective is kept, not discarded, alongside the added courses")
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+    script_deliver_filler_only.verified = False
 
 
 print()
