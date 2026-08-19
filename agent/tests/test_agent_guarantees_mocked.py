@@ -364,6 +364,86 @@ finally:
     script_deliver_filler_only.verified = False
 
 
+# --- Test 7: explicit "add this course" directive is enforced ---
+# Found live: a student named a specific, real, unlocked mandatory course
+# by name and asked for it TWICE across two revision turns - it never made
+# it into the plan. Symmetric to the existing "replace X" removal
+# enforcement: a student's explicit ADD directive must be a hard
+# constraint too, not something the model can silently decline (e.g.
+# because CheeseFork difficulty data made it look unappealing).
+print("--- explicit add-course directive is enforced ---")
+
+ADD_TARGET = "00960210"  # unlocked given state_with_prereqs_for_strong()'s passed set
+NO_ADD_PLAN = ["03940804"]
+
+
+def script_deliver_without_requested_add(_messages):
+    n = getattr(script_deliver_without_requested_add, "n", 0)
+    script_deliver_without_requested_add.n = n + 1
+    if n == 0:
+        return msg([tool_call("verify_plan", {"plan_course_numbers": NO_ADD_PLAN})]), 0.0
+    # Stubbornly keeps delivering without the requested course, no matter
+    # how many times the add-ignored pushback sends it back.
+    return msg([tool_call("deliver_plan", {"course_numbers": NO_ADD_PLAN, "explanation": "here"})]), 0.0
+
+
+add_state = state_with_prereqs_for_strong()
+add_state["requested_add_courses"] = [ADD_TARGET]
+
+arl._call_with_tools = script_deliver_without_requested_add
+_tools.verify_plan = stub_verify_always_pass
+_tools.check_invariants = lambda *a, **k: []
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": f"add {ADD_TARGET} please"}], 0.0, state_override=add_state)
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    check("add_ignored_pushback" in names, "pushback fired when the requested course was missing")
+    check("add_enforced" in names, "add enforced in code after the model ignored the pushback")
+    check(ADD_TARGET in delivered, "the explicitly requested course IS in the final delivered plan")
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+    script_deliver_without_requested_add.n = 0
+
+
+# --- Test 8: a requested-but-genuinely-locked course gets explained, not silently dropped ---
+# Found live: the agent either went silent about a locked course the
+# student explicitly asked for, or worse, cited unrelated CheeseFork
+# difficulty as if that were the reason. A course that's ACTUALLY unlocked
+# gets force-added (Test 7); a course that's GENUINELY locked cannot be -
+# but the student must be told exactly what's still missing, by name, and
+# that guarantee must survive even if a later backstop (e.g.
+# final_safety_swap) replaces the model's own explanation entirely.
+print("--- requested-but-locked course is explained by name, not silently dropped ---")
+
+LOCKED_TARGET = "00960210"  # genuinely locked for base_state() - needs 00940226 first
+
+
+def script_deliver_ignoring_locked_request(_messages):
+    return msg([tool_call("deliver_plan", {"course_numbers": ["03940804"], "explanation": "here you go"})]), 0.0
+
+
+locked_state = base_state()
+locked_state["requested_add_courses"] = [LOCKED_TARGET]
+
+arl._call_with_tools = script_deliver_ignoring_locked_request
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": f"add {LOCKED_TARGET} please"}], 0.0, state_override=locked_state)
+    names = [t["name"] for t in res["tool_log"]]
+    adds_entry = next((t for t in res["tool_log"] if t["name"] == "requested_adds"), None)
+    explanation = res["plan_result"]["explanation"]
+    check(adds_entry is not None and LOCKED_TARGET in adds_entry["result"]["locked"],
+          "the locked course is recognized and logged, not treated as unlocked")
+    check(LOCKED_TARGET not in [c["course_number"] for c in res["plan_result"]["courses"]],
+          "a genuinely locked course is never force-added")
+    check("יסודות בינה מלאכותית" in explanation, "the locked course is named in the explanation, not silently dropped")
+    check("00940226" in explanation or track.courses["00940226"]["name"] in explanation,
+          "the SPECIFIC missing prerequisite is named, not a vague 'prerequisites not met'")
+finally:
+    arl._call_with_tools = orig
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")

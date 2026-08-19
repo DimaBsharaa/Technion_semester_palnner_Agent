@@ -857,6 +857,26 @@ def exam_study_planner(track: Track, plan_course_numbers: list[str]) -> dict:
     }
 
 
+def missing_prereq_courses(tree: dict | None, passed: set[str]) -> list[str]:
+    """The course number(s) still needed to satisfy the EASIEST unmet path
+    through a prerequisite tree - for explaining to a student exactly
+    what's blocking a locked course (e.g. "needs Combinatorics or the
+    extended Discrete Math track"), not just that it's locked. An AND
+    needs every branch's gap; an OR only needs its cheapest (fewest
+    missing courses) branch, since that's the realistic path forward."""
+    if tree is None:
+        return []
+    if "course" in tree:
+        return [] if tree["course"] in passed else [tree["course"]]
+    branches = [missing_prereq_courses(a, passed) for a in tree.get("args", [])]
+    if tree.get("op") == "and":
+        result: list[str] = []
+        for b in branches:
+            result.extend(b)
+        return result
+    return min(branches, key=len) if branches else []
+
+
 def prereq_unmet_in(track: Track, plan_course_numbers: list[str], passed_courses: list[str], failed_courses: list[str]) -> list[str]:
     """Courses in a plan the student literally cannot register for -
     prerequisites unmet (retakes exempt: a failed course's own prereqs were

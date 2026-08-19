@@ -63,6 +63,21 @@ class Track:
         self.courses: dict = bundle["courses"]
         self.requirement_tree: dict = bundle["requirement_tree"]
         self.reverse_prereqs: dict = bundle["reverse_prereqs"]
+        # A course pulled in only as a prerequisite-tree dependency (not a
+        # tree leaf fetch_track_bundle.py fetched CheeseFork/histogram data
+        # for) can be missing these keys entirely - found live, this crashed
+        # every course-listing tool with a bare KeyError the moment such a
+        # course showed up as either DAY-BLOCKED-checkable or in the
+        # available-courses menu. Backfilled once, here, in the same "no
+        # reviews yet" shape cheesefork_client.py itself returns for a real
+        # course with zero reviews - not a special case, the exact same
+        # value - so every downstream reader needs no defensive code at all.
+        for course in self.courses.values():
+            course.setdefault(
+                "cheesefork",
+                {"review_count": 0, "avg_difficulty": None, "avg_general": None, "sample_reviews": []},
+            )
+            course.setdefault("grade_stats", None)
 
         self.mandatory_course_numbers: set[str] = {
             c

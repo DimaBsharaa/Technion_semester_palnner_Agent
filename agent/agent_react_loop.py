@@ -184,10 +184,43 @@ def _system_prompt(
     previous_plan: list[str] | None = None,
     previous_issues: set[str] | None = None,
     requested_removals: list[str] | None = None,
+    requested_adds: list[str] | None = None,
+    requested_adds_locked: set[str] | None = None,
     previous_explanation: str | None = None,
     grade_candidates: list[dict] | None = None,
     approved_retake_course: str | None = None,
 ) -> dict:
+    requested_adds_note = ""
+    if requested_adds:
+        add_names = [f"{c} ({track.courses[c]['name']})" for c in requested_adds]
+        requested_adds_note = (
+            "\nHARD REQUIREMENT: the student explicitly asked to ADD these course(s) by "
+            "name - the delivered plan MUST include them:\n"
+            + "\n".join("- " + n for n in add_names)
+            + "\nA course being hard, poorly reviewed, or workload-heavy is NEVER a reason "
+            "to leave it out silently - CheeseFork/difficulty data is color for the "
+            "explanation (mention the tradeoff honestly), never a veto over an explicit "
+            "student directive. If including it forces something else out to fit "
+            "credits/workload, drop the least valuable elective, not this course."
+        )
+    if requested_adds_locked:
+        passed_set = set(state.get("passed_courses") or [])
+        locked_lines = []
+        for c in sorted(requested_adds_locked):
+            if c not in track.courses:
+                continue
+            still_needed = tools.missing_prereq_courses(track.courses[c]["prerequisites"], passed_set)
+            needed_names = [
+                f"{n} ({track.courses[n]['name']})" if n in track.courses else n for n in still_needed
+            ]
+            needed_text = " + ".join(needed_names) if needed_names else "an unmet prerequisite"
+            locked_lines.append(f"- {c} ({track.courses[c]['name']}) - still needs: {needed_text}")
+        requested_adds_note += (
+            "\nThe student also asked for these, but prerequisites genuinely aren't met yet "
+            "- they cannot be registered for this semester no matter what. Tell the student "
+            "EXACTLY what's still needed (named below), don't just say \"prerequisites aren't "
+            "met\" with no specifics:\n" + "\n".join(locked_lines)
+        )
     grade_suggestions_block = ""
     if grade_candidates:
         grade_suggestions_block = f"""
@@ -290,6 +323,7 @@ You are an experienced Technion academic advisor building a {track.target_semest
 course plan for a "{track.name}" student, with real tools to check your own \
 work before committing to an answer.
 {revision_note}
+{requested_adds_note}
 
 Hard rule, never negotiable: never include a course from the student's \
 passed list below in the plan - it's already completed, retaking it would \
@@ -383,7 +417,12 @@ honestly, not something to paper over with filler.
 
 BUILD THE PLAN THE WAY THE ADVISOR DOES, in this exact order:
 Step 1 - the mandatory skeleton: place this semester's required courses \
-and retakes that fit the student's constraints. These are the anchors.
+and retakes that fit the student's constraints. These are the anchors. \
+"Constraints" means schedule/day/prerequisite constraints ONLY - a \
+mandatory or explicitly-requested course's difficulty, workload, or \
+CheeseFork satisfaction score is NEVER grounds to leave it out. Mention \
+that color honestly in the explanation; don't let it silently override \
+degree progress.
 Step 2 - substitution, when a required course cannot fit (day-blocked or \
 exam clash): replace it like-for-like with the nearest-topic elective \
 from the same degree category, OR pull a NEXT-semester mandatory course \
@@ -429,7 +468,9 @@ that no further attempt will resolve the remaining issue and this is the \
 best achievable option.
 
 Write deliver_plan's explanation as the final message to the student: 3-5 \
-short sentences, not a report. The student already sees a visual breakdown \
+short sentences, not a report. Write it like an advisor talking to the \
+student directly - "you"/"your", plain and warm, not a dry status readout - \
+while staying just as honest and specific about trade-offs. The student already sees a visual breakdown \
 with every course's name, credits, difficulty, satisfaction rating, and a \
 review excerpt, plus an exam calendar - do NOT repeat that in prose, write \
 only what the visual can't show: the reasoning behind the choices. Cover, \
@@ -659,6 +700,30 @@ def run_agent_turn_v2(
             {"name": "requested_removals", "args": {}, "result": {"course_numbers": requested_removals}}
         )
 
+    # Courses the student EXPLICITLY asked to ADD this turn, by name -
+    # found live: a student named a specific mandatory course twice across
+    # two revision turns and it still never made it into the plan (the
+    # model apparently weighed CheeseFork difficulty/sentiment against an
+    # explicit directive, which it must never do - sentiment is color, not
+    # veto power). Symmetric to requested_removals above: an explicit
+    # student directive is a hard constraint the model must satisfy or
+    # explain, not a suggestion it may silently decline. Applies on ANY
+    # turn, not just revisions - a first message can name a course too.
+    # Genuinely locked (unmet prerequisites) courses are excluded here -
+    # those can't be forced in no matter what the student wants, but the
+    # model is told to explain why, not just go silent.
+    requested_adds = [c for c in state.get("requested_add_courses", []) if c in track.courses and c not in passed]
+    requested_adds_locked = set(tools.prereq_unmet_in(track, requested_adds, passed, failed)) if requested_adds else set()
+    requested_adds = [c for c in requested_adds if c not in requested_adds_locked]
+    if requested_adds or requested_adds_locked:
+        tool_log.append(
+            {
+                "name": "requested_adds",
+                "args": {},
+                "result": {"course_numbers": requested_adds, "locked": sorted(requested_adds_locked)},
+            }
+        )
+
     react_messages = [
         _system_prompt(
             track,
@@ -671,6 +736,8 @@ def run_agent_turn_v2(
             previous_plan=previous_plan,
             previous_issues=previous_issues,
             requested_removals=requested_removals,
+            requested_adds=requested_adds,
+            requested_adds_locked=requested_adds_locked,
             previous_explanation=previous_explanation,
             grade_candidates=grade_candidates,
             approved_retake_course=state.get("approved_retake_course"),
@@ -732,6 +799,7 @@ def run_agent_turn_v2(
     persistent_issue_pushed = False
     sport_padding_pushed = False
     removal_pushed = False
+    add_pushed = False
     retake_dropped_pushed = False
     choice_group_pushed = False
     approved_retake_pushed = False
@@ -843,6 +911,55 @@ def run_agent_turn_v2(
                     tool_log.append(
                         {"name": "removal_enforced", "args": {}, "result": {"stripped": ignored_removals}}
                     )
+
+                # Explicit-add enforcement: symmetric to the removal case
+                # above - the student BY NAME asked for specific course(s)
+                # IN. Found live: a student named a real, unlocked mandatory
+                # course explicitly, twice across two revision turns, and it
+                # never made it into the plan - the model apparently let
+                # CheeseFork difficulty/sentiment override an explicit
+                # directive. First violation: send the model back once.
+                # Second violation: add it in code (dropping the cheapest
+                # elective to make room, matching the mandatory top-up
+                # backstop's approach) - an explicit student directive is a
+                # hard constraint here too.
+                missing_adds = [c for c in requested_adds if c not in candidate]
+                if missing_adds:
+                    if not add_pushed and step < MAX_STEPS - 1:
+                        add_pushed = True
+                        add_names = ", ".join(
+                            f"{c} ({track.courses[c]['name']})" for c in missing_adds if c in track.courses
+                        )
+                        tool_log.append(
+                            {"name": "add_ignored_pushback", "args": {}, "result": {"still_missing": missing_adds}}
+                        )
+                        react_messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "content": (
+                                    f"Not delivered: the student explicitly asked to ADD {add_names}, but "
+                                    "your plan doesn't include it. Difficulty/CheeseFork sentiment is never "
+                                    "a reason to leave out an explicit request - include it (drop the least "
+                                    "valuable elective if needed to fit), verify, and deliver."
+                                ),
+                            }
+                        )
+                        continue
+                    # Model ignored the directive twice - enforce in code.
+                    # Drop the cheapest non-mandatory course(s) already in
+                    # the plan to make room, then force the requested
+                    # course(s) in regardless of the credit ceiling - an
+                    # explicit directive outranks the soft credit target.
+                    droppable = sorted(
+                        (c for c in candidate if c not in track.mandatory_course_numbers and c not in requested_adds),
+                        key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
+                    )
+                    for _ in missing_adds:
+                        if droppable:
+                            candidate = [c for c in candidate if c != droppable.pop(0)]
+                    candidate = candidate + [c for c in missing_adds if c not in candidate]
+                    tool_log.append({"name": "add_enforced", "args": {}, "result": {"added": missing_adds}})
 
                 # Verify-before-deliver nudge: if the model tries to deliver
                 # without ever having run verify_plan this turn, send it back
@@ -1533,6 +1650,32 @@ def run_agent_turn_v2(
             )
     else:
         new_proposed_retake = None  # contradicted or malformed - never carry a broken proposal forward
+
+    # Deterministic backstop, same reasoning as the proposed-retake one
+    # above: the prompt TELLS the model to explain a locked-but-requested
+    # course by name, but a later backstop (final_safety_swap, mandatory
+    # top-up...) can throw away the model's own prose entirely and replace
+    # it with a synthetic one that never saw this instruction - found
+    # exactly this live, testing the locked-course path. Guarantee the
+    # explanation, don't trust it survived.
+    for locked_course in sorted(requested_adds_locked or []):
+        if locked_course not in track.courses:
+            continue
+        locked_name = track.courses[locked_course]["name"]
+        if locked_name in final_explanation or locked_course in final_explanation:
+            continue
+        still_needed = tools.missing_prereq_courses(
+            track.courses[locked_course]["prerequisites"], set(state.get("passed_courses") or [])
+        )
+        needed_text = (
+            " + ".join(f"{n} ({track.courses[n]['name']})" if n in track.courses else n for n in still_needed)
+            if still_needed
+            else "a prerequisite you haven't taken yet"
+        )
+        final_explanation += (
+            f" On {locked_name}: you asked for it, but it's not registerable yet - it still needs "
+            f"{needed_text} first."
+        )
 
     verify_result = last_verify_result or {"pass": False, "total_credits": 0, "workload_score": 0, "issues": []}
     # The safety-net explanations above are built BEFORE the locked-course/

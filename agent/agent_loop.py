@@ -350,6 +350,15 @@ asked to REMOVE, REPLACE, or SWAP OUT of their existing plan in their \
 LATEST message (resolve names to numbers via the catalog above). Empty \
 list when they aren't asking to remove anything - this is only for \
 explicit change requests against a plan they already received.
+- "requested_add_courses": real 8-digit course numbers the student \
+explicitly, BY NAME, asked to ADD or INCLUDE this turn (e.g. "add Data \
+Structures", "where's Database Management, put it in", "I don't want to \
+delay my degree, include X") - resolve names to numbers via the catalog \
+above. This is a NOT-yet-passed course they want taken THIS semester, \
+different from "requested_retake_course" above (which is for a course \
+they've ALREADY passed). Naming a course while asking "what do you think \
+of X" or "is X hard" is NOT a request to add it - only a clear ask to \
+include/add/take it counts. Empty list otherwise.
 - "approved_grade_retake": the 8-digit course number ONLY when a specific \
 grade-improvement retake was proposed to the student last turn (see below) \
 AND their latest message clearly accepts it. null otherwise. Never set \
@@ -448,6 +457,7 @@ def _normalize_state(state: dict) -> dict:
     state["passed_courses"] = [str(c).zfill(8) for c in (state.get("passed_courses") or [])]
     state["failed_courses"] = [str(c).zfill(8) for c in (state.get("failed_courses") or [])]
     state["remove_courses"] = [str(c).zfill(8) for c in (state.get("remove_courses") or [])]
+    state["requested_add_courses"] = [str(c).zfill(8) for c in (state.get("requested_add_courses") or [])]
     state["grades"] = {str(c).zfill(8): g for c, g in (state.get("grades") or {}).items()}
     # Deterministic backstop, not left to the extraction prompt alone: a
     # grade recorded against a course absent from both passed/failed is
