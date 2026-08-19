@@ -540,6 +540,18 @@ def run_agent_turn_v2(
         tool_log.append(
             {"name": "grade_retake_approved", "args": {}, "result": {"course_number": state["approved_retake_course"]}}
         )
+    elif state.get("requested_retake_course") in state.get("passed_courses", []):
+        # The student brought this up themselves this turn (no prior
+        # proposal to check against) - see requested_retake_course's
+        # extraction docstring for how this differs from approved_grade_retake.
+        state["approved_retake_course"] = state["requested_retake_course"]
+        tool_log.append(
+            {
+                "name": "grade_retake_self_requested",
+                "args": {},
+                "result": {"course_number": state["approved_retake_course"]},
+            }
+        )
 
     # Question turns ("is X hard?") get one grounded answer from the real
     # review data - no planning loop, no gap-fill buttons, plan untouched.
@@ -1324,8 +1336,7 @@ def run_agent_turn_v2(
                 )
                 final_explanation = (
                     f"Switched to a better-verified alternative before delivering "
-                    f"({len(final_course_numbers)} course(s), "
-                    f"{last_verify_result.get('total_credits', 0)} credits) - the plan initially reached "
+                    f"({{COURSE_COUNT}} course(s), {{TOTAL_CREDITS}} credits) - the plan initially reached "
                     "was still short of the delivery standard even after correction attempts."
                     + issues_sentence
                 )
@@ -1345,7 +1356,7 @@ def run_agent_turn_v2(
             )
             final_explanation = (
                 "The plan being delivered came out empty after corrections, so this falls back to the last "
-                f"candidate that was actually checked ({len(final_course_numbers)} course(s)); "
+                "candidate that was actually checked ({COURSE_COUNT} course(s)); "
                 "see the verification issues below for what's still unresolved."
             )
             tool_log.append({"name": "empty_plan_fallback", "args": {}, "result": last_verify_result})
@@ -1455,6 +1466,17 @@ def run_agent_turn_v2(
         new_proposed_retake = None  # contradicted or malformed - never carry a broken proposal forward
 
     verify_result = last_verify_result or {"pass": False, "total_credits": 0, "workload_score": 0, "issues": []}
+    # The safety-net explanations above are built BEFORE the locked-course/
+    # overlap/live-offering backstops below can still drop a course, so any
+    # course-count or credit figure they embed would go stale the moment one
+    # of those backstops fires afterward (found live: "7 course(s)" printed
+    # next to an explanation that had already dropped to 6). Substituted
+    # here, after every backstop has had its say, against the truly final
+    # numbers - a no-op replace when no placeholder was ever inserted.
+    if "{COURSE_COUNT}" in final_explanation or "{TOTAL_CREDITS}" in final_explanation:
+        final_explanation = final_explanation.replace(
+            "{COURSE_COUNT}", str(len(final_course_numbers))
+        ).replace("{TOTAL_CREDITS}", str(verify_result.get("total_credits", 0)))
     exam_dates = tools.fetch_exam_dates(track, final_course_numbers) if final_course_numbers else {}
     cheesefork = tools.summarize_cheesefork(track, final_course_numbers) if final_course_numbers else {}
     progress = tools.assess_progress(track, semester_number, passed)

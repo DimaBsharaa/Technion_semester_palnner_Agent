@@ -299,7 +299,18 @@ individually, just include the ones implied by your reasoning below:
 From the conversation, extract a JSON object with exactly these keys:
 - "semester_number": the integer semester the student says they're \
 starting (e.g. 4). Required to check their progress against a typical \
-sequence - ask for this if it's genuinely not stated.
+sequence - ask for this if it's genuinely not stated. Hebrew often states \
+this with ordinal LETTERS, not digits - you MUST recognize these, they are \
+not rare: א=1, ב=2, ג=3, ד=4, ה=5, ו=6, ז=7, ח=8, ט=9, י=10 (with or \
+without a geresh/apostrophe, e.g. "סמסטר ג" or "סמסטר ג'" both mean \
+semester 3 - "סמסטר גת" is the same letter ג with a typo, still 3). Also \
+recognize YEAR phrasing: "שנה א" / "שנה ראשונה" = year 1 (semesters 1-2), \
+"שנה ב" = year 2 (semesters 3-4), etc. "סיימתי שנה א" ("I finished year \
+1") means starting semester 3, NOT semester 1 - the student already \
+completed that year. When both a semester letter/number AND a "finished \
+year X" statement appear together, they should agree - if they conflict, \
+prefer the more specific one (an explicit semester number/letter) and use \
+the year statement only for passed_courses inference.
 - "constraints": {{"excluded_weekdays": [ints, 0=Sunday..5=Friday] - use \
 null when day availability was never mentioned, and [] ONLY when the \
 student explicitly says they have no day restrictions or LIFTS a previous \
@@ -344,6 +355,15 @@ grade-improvement retake was proposed to the student last turn (see below) \
 AND their latest message clearly accepts it. null otherwise. Never set \
 this unless a proposal was actually made - see the note below for exactly \
 which course, if any.
+- "requested_retake_course": the 8-digit course number ONLY when the \
+student THEMSELVES, unprompted, explicitly asks to retake/redo/repeat/ \
+improve a SPECIFIC course they've already passed (e.g. "I need to improve \
+my C programming workshop grade", "I want to retake Data Structures") - \
+resolve the course name to a number via the catalog above. This is \
+different from "approved_grade_retake" above: that one is the student \
+accepting A PROPOSAL YOU MADE last turn; this one is the student bringing \
+it up on their own, with no prior proposal. null when nothing like this \
+was said. The course this refers to MUST also appear in passed_courses.
 - "intent": "question" ONLY when the latest message is purely asking for \
 information or opinion ("is X hard?", "what do students say about Y?", \
 "which is easier, A or B?") with NO request to build or change a plan; \
@@ -447,6 +467,16 @@ def _normalize_state(state: dict) -> dict:
     state["failed_courses"] = sorted(failed_set)
     approved_retake = state.get("approved_grade_retake")
     state["approved_grade_retake"] = str(approved_retake).zfill(8) if approved_retake else None
+    requested_retake = state.get("requested_retake_course")
+    if requested_retake:
+        requested_retake = str(requested_retake).zfill(8)
+        # A retake request implies the course was already passed - a
+        # deterministic backstop rather than trusting the model to also
+        # remember to list it in passed_courses (same "never let one field
+        # float unlinked from another" pattern as the grades backfill above).
+        if requested_retake not in state["passed_courses"]:
+            state["passed_courses"] = sorted(set(state["passed_courses"]) | {requested_retake})
+    state["requested_retake_course"] = requested_retake or None
     state["intent"] = state.get("intent") if state.get("intent") in ("plan", "question") else "plan"
     state["question_courses"] = [str(c).zfill(8) for c in (state.get("question_courses") or [])]
 

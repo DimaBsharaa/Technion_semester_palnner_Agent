@@ -204,6 +204,49 @@ finally:
     _tools.check_invariants = orig_inv
 
 
+# --- Test 3c: final safety net's course-count summary never goes stale ---
+# Found live: the swap explanation embeds "(N course(s), M credits)" at the
+# moment it's built, but a LATER backstop (locked-course/overlap/live-check)
+# can still drop a course from final_course_numbers afterward - the printed
+# N then no longer matches the actually-delivered course list. Fixed with a
+# deferred placeholder substitution done after every backstop has run.
+print("--- final safety net's course-count summary stays accurate after a later drop ---")
+
+orig_prereq_unmet = _tools.prereq_unmet_in
+
+
+def stub_prereq_unmet_locks_one(track_, plan, passed_, failed_):
+    # Forces the HARD locked-course backstop to fire AFTER final_safety_swap
+    # already built its explanation with the pre-drop count.
+    if set(plan) == set(STRONG) and "03940582" in plan:
+        return {"03940582"}
+    return set()
+
+
+script_stubborn_deliver_weak.n = 0  # reset the shared counter from Test 3b's run above
+arl._call_with_tools = script_stubborn_deliver_weak
+_tools.verify_plan = stub_verify
+_tools.check_invariants = lambda *a, **k: []
+_tools.prereq_unmet_in = stub_prereq_unmet_locks_one
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": "plan me"}], 0.0, state_override=state_with_prereqs_for_strong()
+    )
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    explanation = res["plan_result"]["explanation"]
+    check("final_safety_swap" in [t["name"] for t in res["tool_log"]], "swap still fires")
+    check("locked_enforced" in [t["name"] for t in res["tool_log"]], "the later locked-course backstop also fires")
+    check(f"({len(delivered)} course(s)" in explanation,
+          "the printed course count matches what was ACTUALLY delivered, not the pre-drop count")
+    check("{COURSE_COUNT}" not in explanation and "{TOTAL_CREDITS}" not in explanation,
+          "no unsubstituted placeholder leaks into the student-facing explanation")
+finally:
+    arl._call_with_tools = orig
+    _tools.verify_plan = orig_verify
+    _tools.check_invariants = orig_inv
+    _tools.prereq_unmet_in = orig_prereq_unmet
+
+
 # --- Test 4: sport-padding pushback ---
 print("--- sport-padding pushback ---")
 
@@ -226,6 +269,45 @@ try:
     check(res["stopped_reason"] == "delivered", "delivery still completes after the one-shot pushback")
 finally:
     arl._call_with_tools = orig
+
+
+# --- Test 5: student proactively requests a retake, with no prior proposal ---
+# Found live: a student who opens with "I need to improve/retake course X"
+# was silently ignored - the only retake path wired up was the agent
+# PROPOSING first, then the student accepting on a LATER turn. A student
+# bringing it up themselves, turn one, had nowhere to go. This checks the
+# other half: state["requested_retake_course"] (set by extraction, or here
+# directly on the state dict since state_override skips extraction) flows
+# into the same approved_retake_course exemption, with no round-trip needed.
+print("--- student proactively requests a retake (no prior agent proposal) ---")
+
+RETAKE_PLAN = ["03940804", "00970249"]  # 03940804 is the course being retaken
+
+
+def script_deliver_retake_plan(_messages):
+    if not getattr(script_deliver_retake_plan, "verified", False):
+        script_deliver_retake_plan.verified = True
+        return msg([tool_call("verify_plan", {"plan_course_numbers": RETAKE_PLAN})]), 0.0
+    return msg([tool_call("deliver_plan", {"course_numbers": RETAKE_PLAN, "explanation": "includes your retake"})]), 0.0
+
+
+self_retake_state = state_with_prereqs_for_strong()
+self_retake_state["passed_courses"] = sorted(set(self_retake_state["passed_courses"]) | {"03940804"})
+self_retake_state["requested_retake_course"] = "03940804"
+
+arl._call_with_tools = script_deliver_retake_plan
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "I need to retake this course"}], 0.0, state_override=self_retake_state)
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    check("grade_retake_self_requested" in names, "self-requested retake recognized without a prior proposal")
+    check("03940804" in delivered, "the already-passed course the student asked to retake IS included")
+    issues = res["plan_result"]["verify"].get("issues", [])
+    check(not any("passed" in i.get("reason", "").lower() for i in issues),
+          "no 'already passed' violation raised for the one exempted course")
+finally:
+    arl._call_with_tools = orig
+    script_deliver_retake_plan.verified = False
 
 
 print()
