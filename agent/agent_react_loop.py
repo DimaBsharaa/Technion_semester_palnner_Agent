@@ -186,10 +186,26 @@ def _system_prompt(
     requested_removals: list[str] | None = None,
     requested_adds: list[str] | None = None,
     requested_adds_locked: set[str] | None = None,
+    near_locked: list[dict] | None = None,
     previous_explanation: str | None = None,
     grade_candidates: list[dict] | None = None,
     approved_retake_course: str | None = None,
 ) -> dict:
+    near_locked_note = ""
+    if near_locked:
+        lines = []
+        for entry in near_locked:
+            needed = " + ".join(f"{n['course_number']} ({n['name']})" for n in entry["still_needs"])
+            lines.append(f"- {entry['course_number']} ({entry['name']}) - still needs: {needed}")
+        near_locked_note = (
+            "\nFYI, not in the menu below because they're genuinely locked - mandatory "
+            "course(s) that would normally matter around now, blocked by a specific "
+            "unmet prerequisite:\n"
+            + "\n".join(lines)
+            + "\nIf your plan doesn't cover much real degree progress, proactively name the "
+            "most relevant one of these and what's blocking it in your explanation - don't "
+            "make the student ask \"where's X?\" to find out it exists and why it's missing."
+        )
     requested_adds_note = ""
     if requested_adds:
         add_names = [f"{c} ({track.courses[c]['name']})" for c in requested_adds]
@@ -324,6 +340,7 @@ course plan for a "{track.name}" student, with real tools to check your own \
 work before committing to an answer.
 {revision_note}
 {requested_adds_note}
+{near_locked_note}
 
 Hard rule, never negotiable: never include a course from the student's \
 passed list below in the plan - it's already completed, retaking it would \
@@ -674,9 +691,20 @@ def run_agent_turn_v2(
     progress = tools.assess_progress(track, semester_number, passed)
     catalog = tools.fetch_catalog(track, passed)
     prereq = tools.query_prereq_graph(track, passed, failed)
+    # A course this locked out of the model's own menu entirely
+    # (_available_courses_text drops anything with an unmet prereq) - found
+    # live, this meant a genuinely important, near-miss mandatory course
+    # (Data Structures) never got explained AT ALL unless the student
+    # happened to name it themselves. Surfaced unconditionally so the model
+    # can proactively mention it, not just answer when asked.
+    near_locked = tools.near_locked_mandatory_courses(track, semester_number, passed, failed)
     tool_log.append({"name": "assess_progress", "args": {"preinjected": True}, "result": progress})
     tool_log.append({"name": "fetch_catalog", "args": {"preinjected": True}, "result": catalog})
     tool_log.append({"name": "query_prereq_graph", "args": {"preinjected": True}, "result": prereq})
+    if near_locked:
+        tool_log.append(
+            {"name": "near_locked_mandatory_courses", "args": {"preinjected": True}, "result": near_locked}
+        )
 
     # Only computed (and only spends any prompt tokens) when the student has
     # given at least one grade - the common case is zero grades known, and
@@ -747,6 +775,7 @@ def run_agent_turn_v2(
             requested_removals=requested_removals,
             requested_adds=requested_adds,
             requested_adds_locked=requested_adds_locked,
+            near_locked=near_locked,
             previous_explanation=previous_explanation,
             grade_candidates=grade_candidates,
             approved_retake_course=state.get("approved_retake_course"),

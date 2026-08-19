@@ -877,6 +877,42 @@ def missing_prereq_courses(tree: dict | None, passed: set[str]) -> list[str]:
     return min(branches, key=len) if branches else []
 
 
+def near_locked_mandatory_courses(
+    track: Track, semester_number: int, passed_courses: list[str], failed_courses: list[str]
+) -> list[dict]:
+    """Mandatory courses that would normally be relevant by now but are
+    currently locked - surfaced PROACTIVELY, unconditionally, not just when
+    the student happens to name one. Found live: a 3rd-semester student's
+    plan silently omitted Data Structures with zero explanation - not
+    because of a bug, but because _available_courses_text drops locked
+    courses from the menu entirely, so the model never even knew it
+    existed to explain. This closes that gap: the model sees it up front
+    and can name it, instead of a student having to ask "where's X?" to
+    get any answer at all."""
+    passed_set = set(passed_courses)
+    failed_set = set(failed_courses)
+    result = []
+    for c in sorted(track.mandatory_course_numbers):
+        if c in passed_set or c in failed_set or c not in track.courses:
+            continue
+        depth = track.mandatory_prereq_depths.get(c, 0)
+        if depth > semester_number:
+            continue  # genuinely not relevant yet, not a near-miss
+        still_needed = missing_prereq_courses(track.courses[c]["prerequisites"], passed_set)
+        if still_needed:
+            result.append(
+                {
+                    "course_number": c,
+                    "name": track.courses[c]["name"],
+                    "still_needs": [
+                        {"course_number": n, "name": track.courses[n]["name"] if n in track.courses else n}
+                        for n in still_needed
+                    ],
+                }
+            )
+    return result
+
+
 def prereq_unmet_in(track: Track, plan_course_numbers: list[str], passed_courses: list[str], failed_courses: list[str]) -> list[str]:
     """Courses in a plan the student literally cannot register for -
     prerequisites unmet (retakes exempt: a failed course's own prereqs were

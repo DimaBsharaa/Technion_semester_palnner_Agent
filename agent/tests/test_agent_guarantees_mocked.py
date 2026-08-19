@@ -86,8 +86,24 @@ try:
     preinjected = [t for t in res["tool_log"] if t.get("args", {}).get("preinjected")]
     check({"assess_progress", "fetch_catalog", "query_prereq_graph"} <= set(names),
           "all three diagnostics appear in the trace")
-    check(len(preinjected) == 3, "diagnostics are marked preinjected (computed in code, not model-fetched)")
+    # >= 3, not == 3: near_locked_mandatory_courses (added after a live bug
+    # where a near-miss mandatory course like Data Structures was silently
+    # invisible) only appears in the trace when this fixture's state
+    # actually has one - additive, not a fixed count.
+    check(len(preinjected) >= 3, "diagnostics are marked preinjected (computed in code, not model-fetched)")
     check(res["plan_result"] is not None, "produces a plan_result")
+    # near_locked_mandatory_courses: a near-miss mandatory course (real
+    # unmet-prereq data, not a fixture artifact) is proactively surfaced to
+    # the model, unconditionally - not only when the student asks about it
+    # by name. base_state() (semester 4, nothing passed) genuinely has
+    # several of these.
+    near_locked_entry = next((t for t in res["tool_log"] if t["name"] == "near_locked_mandatory_courses"), None)
+    check(near_locked_entry is not None, "near-locked mandatory courses surfaced proactively, unconditionally")
+    check(
+        near_locked_entry is not None
+        and any(e["course_number"] == "00960210" and e["still_needs"] for e in near_locked_entry["result"]),
+        "each entry names the specific course(s) still blocking it",
+    )
 finally:
     arl._call_with_tools = orig
 
