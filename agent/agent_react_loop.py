@@ -389,7 +389,12 @@ semester underloaded.
 decent satisfaction rating (shown in the catalog) over a similarly-light \
 one students clearly dislike (roughly below 2.5/5) - light workload \
 doesn't excuse picking something students regret taking, when an equally \
-light alternative with a better rating is available.
+light alternative with a better rating is available. "No-exam" is a useful \
+property, not a shortcut to the same 1-2 courses every time (found live: \
+orchestra and one specific intro-economics elective kept reappearing \
+across completely different students and tracks) - the shortlist below \
+usually has multiple decent-rated options; actually weigh them against \
+each other instead of defaulting to whichever is most familiar.
 6. simulate_future_impact's bottleneck_warnings are advisory, not a hard \
 rule: a course you're leaving for a later semester that would block \
 several others (gateway_score 2+) is worth weighing against everything \
