@@ -741,6 +741,17 @@ def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[
     for c in expected_by_now:
         if c in track.courses:
             auto_passed.update(collect_prereq_courses(track.courses[c]["prerequisites"]))
+    # A course pulled in only as someone ELSE's transitive prerequisite must
+    # never override real official DDS-diagram placement that says it comes
+    # LATER than the student's own semester - found live: an untagged
+    # course (no official_semester - the depth heuristic is its only
+    # signal) had a REAL, later-semester course as one of ITS OWN
+    # prerequisites, and the sweep above blindly auto-passed it anyway.
+    # depth is only ever a fallback signal; official_semester data, once it
+    # exists for a course, is the real answer and wins here too.
+    auto_passed = {
+        c for c in auto_passed if track.official_semester.get(c, -1) < semester_number
+    }
     # A course walked in as someone ELSE's transitive prerequisite must never
     # override an explicit failure - without this subtraction, a failed
     # course that's also a foundation for other mandatory courses gets
