@@ -1,8 +1,9 @@
 # Enhancement Checklist
 
 Combined list from the architecture review + team brainstorm on 2026-08-05.
-Items 0-3 have since shipped (2026-08-18/19) - see the "shipped" notes under
-each. Check items off as they land; update the "Open question" notes as
+Items 0-3 shipped 2026-08-18/19; item 2 was reworked and item 4/6 got a
+major real-data pass on 2026-08-19/20 - see the "shipped" notes under each.
+Check items off as they land; update the "Open question" notes as
 decisions get made instead of deleting the history.
 
 ## 0. Testing setup (unblocks everything else)
@@ -65,36 +66,42 @@ that's still a real open item if you want full confidence in the parser.
   wrapped course names, watermark/signature text) may extract differently.
   First real upload through the running app is the real test.
 
-## 2. Grade-improvement retake suggestions
+## 2. Grade-improvement retakes
 
-**Shipped 2026-08-19.** `tools.suggest_grade_improvements` + `pipeline/histogram_client.py`
+**Shipped 2026-08-19, reworked from a fixed threshold into a genuine
+propose→approve loop after live critique that the original version wasn't
+actually agentic.** `tools.analyze_grade_improvement_candidates` (renamed
+from `suggest_grade_improvements` - returns raw comparison data, course
+average AND the student's own average, no hardcoded "worth suggesting"
+threshold, that judgment moved entirely to the model) + `pipeline/histogram_client.py`
 (real technion-histograms data, verified live) + `pipeline/backfill_grade_stats.py`
-(already run against all 3 real `data/track_*.json` bundles - 115/123,
-128/139, 126/137 courses got real grade_stats). Preinjected (like
-`assess_progress`) only when the student has ≥1 known grade, so it costs
-nothing on the common turn where no grade was ever given. The "never
-hardcode the real retake-eligibility rule" caution below was followed
-exactly - it's phrased in the prompt as an advisory, "worth checking with
-the registrar" suggestion, never auto-added to the delivered plan.
+(already run against all 3 real `data/track_*.json` bundles).
 
-- [x] New advisory tool, `tools.suggest_grade_improvements(track, passed_courses, grades)`:
-  flags a **passed** course as a *candidate* (not a requirement) for retake
-  when its grade is meaningfully below some benchmark (10 points below the
-  historical average, `GRADE_IMPROVEMENT_GAP_THRESHOLD` in `tools.py`).
-- [x] The missing data piece: a per-course grade distribution/average to
-  compare against — this is exactly what
-  [technion-histograms](https://github.com/michael-maltsev/technion-histograms)
-  provides and CheeseFork doesn't. Added as a new pipeline source
-  (`pipeline/histogram_client.py`, same shape as `cheesefork_client.py`) and
-  bundled as `grade_stats` per course alongside `cheesefork` in
-  `data/track_*.json`.
+- [x] The agent may PROPOSE a retake (`deliver_plan`'s `proposed_retake`
+  field) and ask directly whether to include it next turn - the one
+  deliberate exception to "never end with a question." Encouraged to also
+  call `summarize_cheesefork` on a promising candidate first (real
+  multi-step reasoning, not a single lookup) before proposing.
+- [x] A student can also bring up a retake themselves, unprompted, with no
+  prior proposal (`requested_retake_course` at extraction time) - handled
+  identically to an approved proposal from there.
+- [x] Either path sets `state["approved_retake_course"]`, the single
+  narrow, single-turn exception to "never re-include a passed course"
+  (`tools.verify_plan`/`check_invariants`). **Hard-enforced, not just a
+  prompt suggestion** - found live, a one-shot nudge alone wasn't reliable
+  enough: a one-shot nudge first, then code-level enforcement, checked
+  across EVERY delivery path (normal `deliver_plan` call, forced wrap-up,
+  the final safety swap) so an approved retake can't silently vanish
+  depending on which path the loop happened to resolve through - see
+  `approved_retake_guaranteed`/`approved_retake_enforced` in
+  `agent_react_loop.py`. Shows the same RETAKE badge as a failed-course
+  retake (`is_retake`).
 - Open question — the actual retake rule: **still genuinely open, intentionally
   not implemented.** Technion's real "שיפור ציון" (grade improvement) policy
   has specific eligibility constraints (which courses qualify, how many
   attempts allowed, which grade counts, time limits) that this system does
-  not know or verify. The shipped version deliberately never claims
-  guaranteed eligibility and never auto-includes the retake in the delivered
-  plan - only ever a labeled, dismissible suggestion in the explanation.
+  not know or verify. The agent never claims guaranteed eligibility - it
+  always frames a proposal as worth confirming with the registrar.
 
 ## 3. Persistent chat / student memory across sessions
 
@@ -128,6 +135,38 @@ security boundary this implies).
 
 ## 4. Data freshness / sync pipeline
 
+**Major data-quality pass, 2026-08-19/20**, prompted by the user uploading
+the official DDS ("track diagram") PDFs for all 3 tracks and cross-checking
+the app's output against them directly:
+
+- [x] **Official per-course semester placement, digitized by hand from each
+  track's diagram** (every semester's credit total cross-checked against the
+  diagram's own printed total - all matched exactly) - see
+  `Track.official_semester` in `agent/data_bundle.py`. Overrides the
+  prerequisite-depth heuristic wherever known; the heuristic still fills gaps
+  for courses not yet transcribed. Directly fixed multiple live bugs the
+  heuristic alone couldn't: courses silently mis-bucketed into the wrong
+  "semester," a semester-4 course auto-marked already-passed for a
+  semester-3 student purely because it was someone else's transitive
+  prerequisite.
+- [x] **Confirmed Technion's requirement-tree API is neither complete nor
+  precise** - both directions found live: it's missing real mandatory
+  courses the diagrams show (12+ courses fetched by hand across the 3
+  tracks), AND it separately over-includes some courses as "Mandatory" that
+  the diagrams never list at all (duplicate course-number variants of the
+  same real subject - e.g. two different course numbers both meaning
+  "Discrete Math," only one of which the diagram actually requires). See
+  `_CONFIRMED_NON_REQUIREMENTS` in `data_bundle.py` for the per-track,
+  per-course exclusions, each verified against that track's own diagram
+  before being added.
+- [x] **Fixed a real bug in the fetch pipeline itself**:
+  `pipeline/technion_api.py`'s `send_request` retried a failed query FOREVER
+  (5-minute backoff, indefinitely) on "empty response" - which is what the
+  API returns for "this course isn't offered in this semester," a real
+  permanent answer, not a transient network error. This is very likely why
+  earlier data-fetch attempts silently never completed. Added
+  `EmptyResponseError`, never retried, so the caller's own semester-fallback
+  loop gets it immediately instead of hanging.
 - [ ] Problem as described: track bundles were hand-run/copied once rather
   than kept in a repeatable, documented refresh process — so "what happens
   next year" currently has no answer.
@@ -178,17 +217,28 @@ security boundary this implies).
 
 ## 6. More tracks (not just Data Eng / Info Systems Eng)
 
+- [x] **הנדסת תעשיה וניהול (Industrial Engineering & Management) shipped
+  2026-08-20** - previously excluded from `/tracks` entirely
+  (`list_tracks()` only lists tracks with a non-empty flat
+  `mandatory_course_numbers`, and this track's SAP tree has none). Digitizing
+  its official diagram gave it real `official_semester` data for every
+  course through semester 8, which populates `mandatory_course_numbers`
+  directly (union of the tree-derived set and `official_semester`'s keys) -
+  no separate data-model change needed after all, the diagram data itself
+  turned out to be enough of a flat mandatory-course source. Smoke-tested: a
+  real plan builds successfully.
+  - [ ] **Still not modeled**: the diagram's semester 5+ "specialization
+    chain" requirement (3 courses from a track-specific chain by degree end,
+    per the diagram's own red-boxed note) isn't represented at all - one
+    course (`00960324`) is deliberately left untagged rather than guessed,
+    since its exact semester couldn't be pinned down without contradicting
+    the diagram's own printed semester-6 total. Semesters 1-4 for this
+    track are fully accurate; later-semester chain planning is not.
 - [ ] `pipeline/fetch_track_bundle.py` already takes `--faculty`/`--track`
-  as arguments — expanding coverage for tracks with the same flat
-  mandatory-list shape is just running it again per track and committing
-  the output, no code change needed.
-- [ ] Tracks built around **specialization chains** instead of a flat
-  mandatory list (confirmed in `data_bundle.list_tracks`'s comment:
-  Industrial Engineering & Management is one) are structurally excluded
-  right now — `Track.__init__` assumes one universal mandatory-course set.
-  Supporting those needs an actual data-model change in `data_bundle.py`,
-  not just a new fetch run. Scope this as a separate, bigger task from
-  "just add more of the same-shaped tracks."
+  as arguments — expanding coverage to a genuinely new track (beyond the 3
+  now supported) is running it again and committing the output, then
+  digitizing that track's own diagram the same way (see item 4) rather than
+  trusting the tree walk alone - now the established, proven pattern.
 
 ## 7. API endpoints — what exists, what a spec might ask for
 
@@ -224,16 +274,21 @@ course-spec-required `GET /`, `GET /api/team_info`, `GET /api/agent_info`,
 Actual build order ended up different from this original plan - items 1, 3,
 and 2 shipped together (2026-08-18/19) because building memory first made
 transcript/grade data worth persisting, rather than each being useful only
-in isolation. Status as of 2026-08-19:
+in isolation. Item 4's real-data pass and item 6's third track then shipped
+together (2026-08-19/20), prompted directly by the user uploading the
+official diagrams for all 3 tracks. Status as of 2026-08-20:
 
 1. ~~Item 0 (personal API key)~~ — **done**.
 2. ~~Item 1 (transcript ingestion)~~ — **done**; real-layout validation still open.
 3. ~~Item 3 (persistent memory)~~ — **done**, verified against real Supabase.
-4. ~~Item 2 (grade-improvement suggestions)~~ — **done**.
-5. Item 4 (data sync runbook) — **partially done**: the live offering-check
-   covers "is this course still offered," a written runbook for periodic
-   full refreshes is still not written.
-6. Item 6 (more same-shaped tracks) — not started; still cheap, same pipeline.
+4. ~~Item 2 (grade-improvement retakes)~~ — **done**, reworked into a real
+   propose→approve loop with hard cross-path enforcement.
+5. Item 4 (data freshness) — **mostly done**: official per-course semester
+   data digitized for all 3 tracks, real tree over/under-inclusion bugs
+   found and fixed, a real fetch-pipeline retry bug fixed. A written runbook
+   for periodic full refreshes still doesn't exist.
+6. ~~Item 6 (more tracks)~~ — **done** for a 3rd track (הנדסת תעשיה וניהול);
+   its semester 5+ specialization-chain requirement still isn't modeled.
 7. Item 5 (new actions) — not started, additive, low urgency.
 8. Item 7 (API endpoints) — the required course-spec endpoints all exist
    and are deployed; the "what else might be wanted" open question is

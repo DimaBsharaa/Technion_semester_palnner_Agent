@@ -38,7 +38,7 @@ Requirements: Python 3.11+, `pip install fastapi uvicorn openai pdfplumber pytho
 ## Tests
 
 ```bash
-bash agent/tests/run_mocked.sh          # 54 checks, no API cost - run before any demo
+bash agent/tests/run_mocked.sh          # 90+ checks, no API cost - run before any demo
 python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after model/prompt changes
 ```
 
@@ -47,7 +47,7 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
 | Path | What it is |
 |---|---|
 | `agent/agent_react_loop.py` | **The agent** — the bounded tool-choosing loop and its guards |
-| `agent/tools.py` | 15 model-callable tools (pure Python, no AI inside) - incl. the weekly-schedule and exam-study analyzers, plus `suggest_grade_improvements` (preinjected, not model-callable - see `docs/enhancement-checklist.md` item 2) |
+| `agent/tools.py` | 15 model-callable tools (pure Python, no AI inside) - incl. the weekly-schedule and exam-study analyzers, plus `analyze_grade_improvement_candidates` (preinjected, not model-callable - see `docs/enhancement-checklist.md` item 2) |
 | `agent/agent_loop.py` | Understanding/extraction + shared helpers + legacy pipeline (fallback) |
 | `agent/student_store.py` | Supabase-backed session persistence, keyed by hashed student email (item 3) |
 | `agent/transcript_parser.py` | Parses an uploaded Technion transcript PDF into courses/grades (item 1) |
@@ -88,13 +88,36 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
   grades survive, and those only ever live in memory for the request unless
   `student_key` is also set (in which case they're saved the same way any
   other resolved state is - see above).
-- **Grade-improvement suggestions:** when a student's own grade in a passed
-  course is known (from the transcript, or just mentioned in chat) and is
-  notably below that course's historical average (`technion-histograms`, see
-  `pipeline/histogram_client.py`), the agent may mention it as a labeled,
-  dismissible retake suggestion. Never auto-added to a plan, never claimed
-  as guaranteed-eligible under Technion's actual grade-improvement policy -
-  see `docs/enhancement-checklist.md` item 2 for the full reasoning.
+- **Grade-improvement retakes (agentic propose→approve, and student-initiated):**
+  when a student's own grade in a passed course is known and notably below
+  that course's historical average (`technion-histograms`), the agent may
+  PROPOSE a retake for grade improvement (`deliver_plan`'s `proposed_retake`
+  field) and ask directly whether to include it - the one deliberate
+  exception to "never end with a question." If the student agrees next turn
+  (or brings up the retake themselves, unprompted, in their own first
+  message - `requested_retake_course`), it's included and gets the same
+  RETAKE badge as a failed-course retake. This is hard-enforced, not just a
+  prompt suggestion: a one-shot nudge first, then code-level enforcement
+  across every delivery path (normal delivery, forced wrap-up, the final
+  safety swap) if the model still omits an approved retake - see
+  `agent_react_loop.py`'s `approved_retake_guaranteed`/`approved_retake_enforced`.
+  Never claims guaranteed eligibility under Technion's actual grade-improvement
+  policy - see `docs/enhancement-checklist.md` item 2.
+- **Official semester placement (`track.official_semester`):** Technion's own
+  requirement-tree API is neither complete (missing real mandatory courses
+  the official DDS diagrams show) nor precise (also tags some courses
+  "Mandatory" that the diagrams never list, and the prerequisite-depth
+  heuristic used as a fallback is only ever an approximation of real
+  curriculum pacing). Real per-course semester placement, hand-digitized
+  from each track's official DDS diagram and cross-checked against its
+  printed credit totals, now overrides the heuristic wherever it's known -
+  see `agent/data_bundle.py`'s `Track.official_semester` and
+  `_CONFIRMED_NON_REQUIREMENTS`. Currently covers all 3 tracks, including
+  הנדסת תעשיה וניהול (previously excluded from `/tracks` entirely because it
+  has no flat mandatory-course list in Technion's tree - digitizing its
+  diagram gave it one, so it's selectable now; semesters 1-4 are fully
+  accurate, its later-semester "specialization chain" requirement isn't
+  modeled yet - see `docs/enhancement-checklist.md` item 6).
 - **Live course-offering check:** right before delivering a plan, the agent
   makes one real-time check against Technion's own system to confirm the
   final candidate courses are still actually offered - `data/track_*.json`
