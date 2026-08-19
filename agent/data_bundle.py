@@ -79,12 +79,35 @@ class Track:
             )
             course.setdefault("grade_stats", None)
 
+        # Ground truth, where we have it: Technion's own official DDS
+        # ("track diagram") PDF places each course in a specific semester -
+        # a real answer to the question the prerequisite-depth heuristic
+        # below can only ever approximate. Technion's requirement-tree API
+        # doesn't expose this (confirmed live: it's missing real mandatory
+        # courses the diagram shows), so this is populated by hand from
+        # digitized diagrams, one track at a time, and is necessarily
+        # partial - absent for any course not yet transcribed. See
+        # assess_progress/backfill_passed_courses for how the two signals
+        # combine: official data wins whenever it exists, the heuristic
+        # only fills the gaps.
+        self.official_semester: dict[str, int] = {
+            c: course["official_semester"] for c, course in self.courses.items() if course.get("official_semester")
+        }
+
         self.mandatory_course_numbers: set[str] = {
             c
             for category in _bottom_categories(self.requirement_tree)
             if category["name"] in _MANDATORY_CATEGORY_NAMES
             for c in _leaf_courses(category)
         }
+        # Confirmed live: Technion's own requirement-tree API is missing
+        # real mandatory courses the official DDS diagram shows (e.g.
+        # ארגון המחשב ומערכות הפעלה, מבוא לניתוח נתונים for הנדסת מערכות
+        # מידע) - even a fresh re-fetch doesn't include them, so this isn't
+        # stale data, the tree endpoint itself just doesn't cover
+        # everything the diagram does. Any course the diagram places in a
+        # semester is mandatory by definition, tree or no tree.
+        self.mandatory_course_numbers |= set(self.official_semester.keys())
         # Required courses that come as "pick one variant" groups (e.g.
         # calculus 1מ' OR 1מ2) live under the Mandatory category but NOT in
         # flat "Mandatory option" leaves - missing them made the agent treat

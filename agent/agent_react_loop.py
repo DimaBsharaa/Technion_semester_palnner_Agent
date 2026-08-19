@@ -1543,124 +1543,6 @@ def run_agent_turn_v2(
             )
             tool_log.append({"name": "locked_enforced", "args": {}, "result": {"dropped": locked}})
 
-    # HARD mandatory-course top-up backstop: found live, a plan can pass
-    # credit/workload checks while making almost no real degree progress -
-    # 2 filler electives (orchestra, an entrepreneurship elective) got
-    # delivered instead of two ALREADY-UNLOCKED real mandatory courses,
-    # with verify_plan's own "only 1 mandatory course(s), expected at
-    # least 3" issue printed right in the explanation and delivered
-    # anyway. The earlier safety net only ever picks the best plan the
-    # model itself tried - if every attempt padded with electives instead
-    # of taking available requirements, there was nothing better to swap
-    # in. This swaps unlocked, not-yet-included mandatory courses in for
-    # the cheapest electives currently in the plan, up to the credit
-    # ceiling - mirrors verify_plan's own min_mandatory_courses logic so
-    # the two can never disagree about what's actually required here.
-    if final_course_numbers:
-        override_minimums = state["constraints"].get("override_minimums", False)
-        min_mandatory = 0 if override_minimums else tools.DEFAULT_MIN_MANDATORY_COURSES
-        remaining_mandatory = track.mandatory_course_numbers - set(passed)
-        effective_min = min(min_mandatory, len(remaining_mandatory))
-        mandatory_in_plan = [c for c in final_course_numbers if c in track.mandatory_course_numbers and c not in passed]
-        shortfall = effective_min - len(mandatory_in_plan)
-        if shortfall > 0:
-            candidate_pool = sorted(remaining_mandatory - set(final_course_numbers))
-            still_locked = tools.prereq_unmet_in(track, candidate_pool, passed, failed) if candidate_pool else set()
-            candidates = [
-                c for c in candidate_pool
-                if c not in still_locked and track.courses.get(c, {}).get("offered_next_semester", True)
-            ]
-            max_credits = verify_kwargs.get("max_credits", tools.DEFAULT_MAX_CREDITS)
-
-            def _plan_points(nums):
-                return sum(float(track.courses[c].get("points") or 0) for c in nums if c in track.courses)
-
-            # Never drop a mandatory course already in the plan or the
-            # approved retake - only genuine filler is fair game, cheapest
-            # (least degree value) first.
-            droppable = sorted(
-                (
-                    c for c in final_course_numbers
-                    if c not in track.mandatory_course_numbers and c != state.get("approved_retake_course")
-                ),
-                key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
-            )
-            added = []
-            for candidate in candidates:
-                if shortfall <= 0:
-                    break
-                candidate_points = float(track.courses[candidate].get("points") or 0)
-                while droppable and _plan_points(final_course_numbers) + candidate_points > max_credits:
-                    drop = droppable.pop(0)
-                    final_course_numbers = [c for c in final_course_numbers if c != drop]
-                if _plan_points(final_course_numbers) + candidate_points > max_credits:
-                    continue  # no room even after dropping every droppable elective
-                final_course_numbers = final_course_numbers + [candidate]
-                added.append(candidate)
-                shortfall -= 1
-            if added:
-                last_verify_result = tools.verify_plan(
-                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
-                )
-                names = ", ".join(track.courses[c]["name"] for c in added)
-                final_explanation += (
-                    f" Note: added {names} - genuinely available, unlocked mandatory requirement(s) the "
-                    "plan was missing; the least valuable elective(s) made room for them."
-                )
-                tool_log.append({"name": "mandatory_topup_enforced", "args": {}, "result": {"added": added}})
-
-    # HARD credit-floor top-up backstop: mirrors the mandatory top-up
-    # above, but for the credit minimum itself - found live, honoring an
-    # explicit "add X" request by dropping enough OTHER courses to fall
-    # from 17.5 to 13 credits, well under the floor, even though the
-    # prompt says never to do that. The model's own over-trimming can
-    # produce this regardless of which backstop (if any) fired, so this is
-    # checked unconditionally against the truly current total.
-    if final_course_numbers:
-        min_credits = verify_kwargs.get("min_credits", tools.DEFAULT_MIN_CREDITS)
-        current_points = sum(
-            float(track.courses[c].get("points") or 0) for c in final_course_numbers if c in track.courses
-        )
-        if current_points < min_credits:
-            already_in = set(final_course_numbers)
-            pool = [
-                c
-                for c in track.courses
-                if c not in already_in and c not in passed and track.courses[c].get("offered_next_semester")
-            ]
-            locked_pool = set(tools.prereq_unmet_in(track, pool, passed, failed)) if pool else set()
-            existing_sport = len(_sport_courses_in(track, final_course_numbers))
-            candidates = [
-                c
-                for c in pool
-                if c not in locked_pool
-                and not (existing_sport >= 1 and c in _sport_courses_in(track, [c]))
-                and not (
-                    excluded_weekdays
-                    and track.courses[c].get("schedule")
-                    and {s["weekday"] for s in tools.pick_section(track.courses[c], excluded_weekdays)}
-                    <= set(excluded_weekdays)
-                )
-            ]
-            candidates.sort(key=lambda c: float(track.courses[c].get("points") or 0), reverse=True)
-            topped_up = []
-            for c in candidates:
-                if current_points >= min_credits:
-                    break
-                final_course_numbers = final_course_numbers + [c]
-                current_points += float(track.courses[c].get("points") or 0)
-                topped_up.append(c)
-            if topped_up:
-                last_verify_result = tools.verify_plan(
-                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
-                )
-                names = ", ".join(track.courses[c]["name"] for c in topped_up)
-                final_explanation += (
-                    f" Note: added {names} - the plan had fallen below the credit floor; these fill "
-                    "it back out from the available shortlist."
-                )
-                tool_log.append({"name": "credit_floor_topup_enforced", "args": {}, "result": {"added": topped_up}})
-
     # HARD collision backstop: a delivered week must NEVER contain a real
     # class-time collision, on any path (model delivery, forced wrap-up,
     # empty-plan fallback). If the coordinated section assignment still has
@@ -1720,6 +1602,143 @@ def run_agent_turn_v2(
                 f" Note: {names} was removed - a live check against Technion's system just now shows "
                 "it's no longer offered this semester, even though the cached course data said otherwise."
             )
+
+    # HARD mandatory-course top-up backstop: found live, a plan can pass
+    # credit/workload checks while making almost no real degree progress -
+    # 2 filler electives (orchestra, an entrepreneurship elective) got
+    # delivered instead of two ALREADY-UNLOCKED real mandatory courses,
+    # with verify_plan's own "only 1 mandatory course(s), expected at
+    # least 3" issue printed right in the explanation and delivered
+    # anyway. The earlier safety net only ever picks the best plan the
+    # model itself tried - if every attempt padded with electives instead
+    # of taking available requirements, there was nothing better to swap
+    # in. This swaps unlocked, not-yet-included mandatory courses in for
+    # the cheapest electives currently in the plan, up to the credit
+    # ceiling - mirrors verify_plan's own min_mandatory_courses logic so
+    # the two can never disagree about what's actually required here.
+    # Runs LAST (after locked-course/overlap/live-offering, same reasoning
+    # as the credit-floor top-up below) so a later drop can't reopen the
+    # shortfall this backstop just closed - each addition is
+    # collision-checked since nothing runs afterward to clean one up.
+    if final_course_numbers:
+        override_minimums = state["constraints"].get("override_minimums", False)
+        min_mandatory = 0 if override_minimums else tools.DEFAULT_MIN_MANDATORY_COURSES
+        remaining_mandatory = track.mandatory_course_numbers - set(passed)
+        effective_min = min(min_mandatory, len(remaining_mandatory))
+        mandatory_in_plan = [c for c in final_course_numbers if c in track.mandatory_course_numbers and c not in passed]
+        shortfall = effective_min - len(mandatory_in_plan)
+        if shortfall > 0:
+            candidate_pool = sorted(remaining_mandatory - set(final_course_numbers))
+            still_locked = tools.prereq_unmet_in(track, candidate_pool, passed, failed) if candidate_pool else set()
+            candidates = [
+                c for c in candidate_pool
+                if c not in still_locked and track.courses.get(c, {}).get("offered_next_semester", True)
+            ]
+            max_credits = verify_kwargs.get("max_credits", tools.DEFAULT_MAX_CREDITS)
+
+            def _plan_points(nums):
+                return sum(float(track.courses[c].get("points") or 0) for c in nums if c in track.courses)
+
+            # Never drop a mandatory course already in the plan or the
+            # approved retake - only genuine filler is fair game, cheapest
+            # (least degree value) first.
+            droppable = sorted(
+                (
+                    c for c in final_course_numbers
+                    if c not in track.mandatory_course_numbers and c != state.get("approved_retake_course")
+                ),
+                key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
+            )
+            added = []
+            for candidate in candidates:
+                if shortfall <= 0:
+                    break
+                candidate_points = float(track.courses[candidate].get("points") or 0)
+                trial = [c for c in final_course_numbers]
+                trial_droppable = list(droppable)
+                while trial_droppable and _plan_points(trial) + candidate_points > max_credits:
+                    trial.remove(trial_droppable.pop(0))
+                if _plan_points(trial) + candidate_points > max_credits:
+                    continue  # no room even after dropping every droppable elective
+                trial = trial + [candidate]
+                if tools.choose_sections(track, trial, excluded_weekdays)["overlaps"]:
+                    continue  # would introduce a new collision - skip, nothing runs after this to fix it
+                final_course_numbers = trial
+                droppable = trial_droppable
+                added.append(candidate)
+                shortfall -= 1
+            if added:
+                last_verify_result = tools.verify_plan(
+                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+                )
+                names = ", ".join(track.courses[c]["name"] for c in added)
+                final_explanation += (
+                    f" Note: added {names} - genuinely available, unlocked mandatory requirement(s) the "
+                    "plan was missing; the least valuable elective(s) made room for them."
+                )
+                tool_log.append({"name": "mandatory_topup_enforced", "args": {}, "result": {"added": added}})
+
+    # HARD credit-floor top-up backstop: mirrors the mandatory top-up
+    # above, but for the credit minimum itself - found live, honoring an
+    # explicit "add X" request by dropping enough OTHER courses to fall
+    # from 17.5 to 13 credits, well under the floor, even though the
+    # prompt says never to do that. The model's own over-trimming can
+    # produce this regardless of which backstop (if any) fired, so this is
+    # checked unconditionally against the truly current total. Runs LAST,
+    # after locked-course/overlap/live-offering can all still drop a
+    # course - found live, running this earlier let a later collision-drop
+    # silently reopen a shortfall this backstop had just closed, with
+    # nothing left to catch it (18.5 credits -> drop one for a real
+    # overlap -> 15.0, under the floor, unnoticed). Each candidate is
+    # collision-checked before being added since nothing runs afterward to
+    # clean up a new overlap this backstop might introduce.
+    if final_course_numbers:
+        min_credits = verify_kwargs.get("min_credits", tools.DEFAULT_MIN_CREDITS)
+        current_points = sum(
+            float(track.courses[c].get("points") or 0) for c in final_course_numbers if c in track.courses
+        )
+        if current_points < min_credits:
+            already_in = set(final_course_numbers)
+            pool = [
+                c
+                for c in track.courses
+                if c not in already_in and c not in passed and track.courses[c].get("offered_next_semester")
+            ]
+            locked_pool = set(tools.prereq_unmet_in(track, pool, passed, failed)) if pool else set()
+            existing_sport = len(_sport_courses_in(track, final_course_numbers))
+            candidates = [
+                c
+                for c in pool
+                if c not in locked_pool
+                and not (existing_sport >= 1 and c in _sport_courses_in(track, [c]))
+                and not (
+                    excluded_weekdays
+                    and track.courses[c].get("schedule")
+                    and {s["weekday"] for s in tools.pick_section(track.courses[c], excluded_weekdays)}
+                    <= set(excluded_weekdays)
+                )
+            ]
+            candidates.sort(key=lambda c: float(track.courses[c].get("points") or 0), reverse=True)
+            topped_up = []
+            for c in candidates:
+                if current_points >= min_credits:
+                    break
+                trial = final_course_numbers + [c]
+                if tools.choose_sections(track, trial, excluded_weekdays)["overlaps"]:
+                    continue  # would introduce a new collision - skip, nothing runs after this to fix it
+                final_course_numbers = trial
+                current_points += float(track.courses[c].get("points") or 0)
+                topped_up.append(c)
+            if topped_up:
+                last_verify_result = tools.verify_plan(
+                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+                )
+                names = ", ".join(track.courses[c]["name"] for c in topped_up)
+                final_explanation += (
+                    f" Note: added {names} - the plan had fallen below the credit floor; these fill "
+                    "it back out from the available shortlist."
+                )
+                tool_log.append({"name": "credit_floor_topup_enforced", "args": {}, "result": {"added": topped_up}})
 
     # Deterministic backstop, not left to the model to remember: live
     # testing showed the model reliably filling in deliver_plan's

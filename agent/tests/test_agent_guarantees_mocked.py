@@ -101,7 +101,7 @@ try:
     check(near_locked_entry is not None, "near-locked mandatory courses surfaced proactively, unconditionally")
     check(
         near_locked_entry is not None
-        and any(e["course_number"] == "00960210" and e["still_needs"] for e in near_locked_entry["result"]),
+        and any(e["course_number"] == "00940290" and e["still_needs"] for e in near_locked_entry["result"]),
         "each entry names the specific course(s) still blocking it",
     )
 finally:
@@ -137,14 +137,17 @@ print("--- best verified plan wins a forced wrap-up ---")
 # BOTH unlocked AND not already auto-backfilled as passed for this state's
 # semester_number=4 (verified against backfill_passed_courses's real
 # output, not just prereq depth - a shallower course can still get
-# auto-marked passed by the EXPECTED_BY_NOW_BUFFER heuristic) and don't
-# collide on the schedule - so STRONG already clears
-# tools.DEFAULT_MIN_MANDATORY_COURSES on its own. Otherwise the
-# mandatory-course top-up backstop (added after a live bug: filler
-# electives delivered instead of available mandatory courses) would modify
-# this plan, breaking this test's exact-match assertions, which are about
-# best-plan SELECTION, not that specific backstop.
-STRONG = ["03940804", "00970249", "03940582", "00940241", "00940314", "00940424"]
+# auto-marked passed by the EXPECTED_BY_NOW_BUFFER heuristic, or now by
+# real official_semester diagram data) and don't collide on the schedule -
+# so STRONG already clears tools.DEFAULT_MIN_MANDATORY_COURSES on its own.
+# Otherwise the mandatory-course top-up backstop (added after a live bug:
+# filler electives delivered instead of available mandatory courses) would
+# modify this plan, breaking this test's exact-match assertions, which are
+# about best-plan SELECTION, not that specific backstop. (Revised once
+# already, after adding official_semester data made two of the original
+# three - 00940241, 00940424 - correctly auto-backfill as already-passed
+# for this state.)
+STRONG = ["03940804", "00970249", "03940582", "00940314", "00960210", "00960275"]
 WEAK = ["03940804"]
 
 import tools as _tools  # noqa: E402
@@ -433,7 +436,7 @@ finally:
 # final_safety_swap) replaces the model's own explanation entirely.
 print("--- requested-but-locked course is explained by name, not silently dropped ---")
 
-LOCKED_TARGET = "00960210"  # genuinely locked for base_state() - needs 00940226 first
+LOCKED_TARGET = "00940290"  # genuinely locked for base_state() - needs 00960224 first
 
 
 def script_deliver_ignoring_locked_request(_messages):
@@ -453,8 +456,8 @@ try:
           "the locked course is recognized and logged, not treated as unlocked")
     check(LOCKED_TARGET not in [c["course_number"] for c in res["plan_result"]["courses"]],
           "a genuinely locked course is never force-added")
-    check("יסודות בינה מלאכותית" in explanation, "the locked course is named in the explanation, not silently dropped")
-    check("00940226" in explanation or track.courses["00940226"]["name"] in explanation,
+    check("מעבדה באיסוף וניהול נתונים" in explanation, "the locked course is named in the explanation, not silently dropped")
+    check("00960224" in explanation or track.courses["00960224"]["name"] in explanation,
           "the SPECIFIC missing prerequisite is named, not a vague 'prerequisites not met'")
 finally:
     arl._call_with_tools = orig

@@ -89,6 +89,19 @@ def _prereq_satisfied(tree: dict | None, passed: set[str]) -> bool:
     return any(_prereq_satisfied(arg, passed) for arg in tree["args"])
 
 
+def _expected_by_now(track: Track, course_number: str, depth: int, semester_number: int) -> bool:
+    """True if this course should already be done by semester_number.
+    Prefers track.official_semester (digitized from Technion's own DDS
+    diagram, see data_bundle.py) whenever it's known for this course -
+    real ground truth, not an approximation. Only falls back to the
+    prerequisite-depth heuristic for courses the diagram hasn't been
+    transcribed for yet."""
+    official = track.official_semester.get(course_number)
+    if official is not None:
+        return official < semester_number
+    return depth <= semester_number - EXPECTED_BY_NOW_BUFFER
+
+
 def assess_progress(track: Track, semester_number: int, passed_courses: list[str]) -> dict:
     """The first diagnostic step, before anything else: how does this
     student's actual completion compare to a normal student at this point
@@ -104,14 +117,13 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
     prerequisite chain does not mean Technion's real curriculum schedules
     a course that early; pacing/credit-balancing spreads mandatory courses
     across many semesters independent of how few prerequisites they need.
-    EXPECTED_BY_NOW_BUFFER widens that gap - still an approximation (there
-    is no real per-semester program-sequence data in this codebase, see
-    docs/enhancement-checklist.md item 4's DDS-diagram note), but a
-    meaningfully less aggressive one, calibrated against that live evidence.
+    EXPECTED_BY_NOW_BUFFER widens that gap - still an approximation, now
+    used only where track.official_semester (Technion's own DDS diagram,
+    digitized by hand - see data_bundle.py) doesn't cover a course yet.
     """
     passed = set(passed_courses)
     depths = track.mandatory_prereq_depths
-    expected_completed = {c for c, d in depths.items() if d <= semester_number - EXPECTED_BY_NOW_BUFFER}
+    expected_completed = {c for c, d in depths.items() if _expected_by_now(track, c, d, semester_number)}
     missing_vs_expected = sorted(
         {c: track.courses[c]["name"] for c in (expected_completed - passed) if c in track.courses}.items()
     )
@@ -122,7 +134,7 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
         if group["depth"] <= semester_number - EXPECTED_BY_NOW_BUFFER and not (set(group["options"]) & passed):
             missing_vs_expected.append((group["options"][0], f"{group['label']} (one of these is required)"))
     ahead_of_schedule = sorted(
-        c for c in passed if c in depths and depths[c] > semester_number - EXPECTED_BY_NOW_BUFFER
+        c for c in passed if c in depths and not _expected_by_now(track, c, depths[c], semester_number)
     )
 
     if len(missing_vs_expected) >= 3:
@@ -155,7 +167,16 @@ def get_intake_options(track: Track) -> dict:
     reached yet" once the student picks a semester number, the same
     heuristic assess_progress and the drafting step already use."""
     mandatory = [
-        {"course_number": c, "name": track.courses[c]["name"], "depth": track.mandatory_prereq_depths.get(c, 0)}
+        {
+            "course_number": c,
+            "name": track.courses[c]["name"],
+            "depth": track.mandatory_prereq_depths.get(c, 0),
+            # Real Technion DDS-diagram placement, where known - lets a
+            # frontend filter/sort by actual semester instead of the
+            # prerequisite-depth proxy. null when not yet digitized for
+            # this course.
+            "official_semester": track.official_semester.get(c),
+        }
         for c in sorted(track.mandatory_course_numbers)
         if c in track.courses
     ]
@@ -163,9 +184,17 @@ def get_intake_options(track: Track) -> dict:
     # answers for the group; the first option stands in as its id).
     for group in track.mandatory_choice_groups:
         mandatory.append(
-            {"course_number": group["options"][0], "name": f"{group['label']} (אחת מהאפשרויות)", "depth": group["depth"]}
+            {
+                "course_number": group["options"][0],
+                "name": f"{group['label']} (אחת מהאפשרויות)",
+                "depth": group["depth"],
+                "official_semester": min(
+                    (track.official_semester[o] for o in group["options"] if o in track.official_semester),
+                    default=None,
+                ),
+            }
         )
-    mandatory.sort(key=lambda c: (c["depth"], c["course_number"]))
+    mandatory.sort(key=lambda c: (c["official_semester"] if c["official_semester"] is not None else c["depth"], c["course_number"]))
     return {
         "track_id": track.otjid,
         "track_name": track.name,

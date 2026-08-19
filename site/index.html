@@ -2169,7 +2169,12 @@ function renderCourseChecklist() {
   // depth < semester (rather than depth <= semester - buffer) covers a
   // full extra "prerequisite layer" of courses below the student's own
   // semester, without pulling in ones that are genuinely still far off.
-  const expectedByNow = intakeOptions.mandatory_courses.filter((c) => c.depth < selectedSemester);
+  // official_semester (Technion's real DDS-diagram placement, where it's
+  // been digitized - see data_bundle.py) wins per-course over the depth
+  // proxy whenever it's known - real data beats a heuristic guess.
+  const expectedByNow = intakeOptions.mandatory_courses.filter((c) =>
+    c.official_semester != null ? c.official_semester < selectedSemester : c.depth < selectedSemester
+  );
 
   if (expectedByNow.length === 0) {
     el.textContent = "No required courses are expected done yet at this semester - you're all caught up by default.";

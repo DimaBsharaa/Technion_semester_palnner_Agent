@@ -720,12 +720,14 @@ def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[
     both rather than needing to be duplicated and kept in sync."""
     failed = set(state["failed_courses"])
     semester_number = state.get("semester_number") or 0
-    # Same buffer/cutoff as tools.assess_progress - kept identical
-    # deliberately so the two never contradict each other in the same
-    # response (progress display vs. what's actually excluded from the
-    # plan). See tools.EXPECTED_BY_NOW_BUFFER for the reasoning/evidence.
+    # Same signal as tools.assess_progress - kept identical deliberately so
+    # the two never contradict each other in the same response (progress
+    # display vs. what's actually excluded from the plan): official DDS
+    # diagram data (track.official_semester) wins per-course whenever it's
+    # known, the prerequisite-depth heuristic only fills in the rest. See
+    # tools._expected_by_now / tools.EXPECTED_BY_NOW_BUFFER.
     expected_by_now = {
-        c for c, d in track.mandatory_prereq_depths.items() if d <= semester_number - tools.EXPECTED_BY_NOW_BUFFER
+        c for c, d in track.mandatory_prereq_depths.items() if tools._expected_by_now(track, c, d, semester_number)
     } - failed
     # Choose-one-variant requirements due by now: mark ALL variants passed
     # (we can't know which one the student took, and later prerequisites

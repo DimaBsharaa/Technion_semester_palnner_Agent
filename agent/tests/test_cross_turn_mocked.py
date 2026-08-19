@@ -110,18 +110,21 @@ def make_deliver_message(course_numbers, explanation):
 
 captured_react_prompts: list[str] = []
 # A verifiable, realistic plan: the retake + real courses from the track.
-# Includes enough real mandatory courses (00940224 the retake, plus
-# 00960275/00960411/00940312, all unlocked and NOT already auto-backfilled
-# passed for this state) to clear tools.DEFAULT_MIN_MANDATORY_COURSES, AND
-# enough total credits (19.0) to clear tools.DEFAULT_MIN_CREDITS -
-# otherwise either the mandatory-course top-up backstop or the
-# credit-floor top-up backstop in agent_react_loop.py (both added after
-# live bugs: filler electives delivered instead of available mandatory
-# courses, and an explicit "add X" request honored by dropping credits
-# well under the floor) would append more courses here, breaking this
-# test's exact-match assertions below, which are about the known_context
-# plumbing, not either backstop.
-DELIVERED = ["00940224", "00960425", "03940902", "00960275", "00960411", "00940312"]
+# Every course here was directly checked (not guessed) against this exact
+# state: 4 real, currently-unlocked, NOT-already-backfilled-passed
+# mandatory courses (clears tools.DEFAULT_MIN_MANDATORY_COURSES), 18.5
+# total credits (clears tools.DEFAULT_MIN_CREDITS), zero schedule overlaps,
+# zero invariant violations. Needs to stay this precise: the
+# mandatory-course and credit-floor top-up backstops in
+# agent_react_loop.py (added after live bugs: filler electives delivered
+# instead of available mandatory courses, and an explicit "add X" request
+# honored by dropping credits well under the floor) would otherwise modify
+# this plan, breaking this test's exact-match assertions below, which are
+# about the known_context plumbing, not either backstop. (This has already
+# been revised twice as track data improved - first EXPECTED_BY_NOW_BUFFER
+# recalibration, then official_semester data - each time changing which
+# courses count as "already passed" for this state.)
+DELIVERED = ["00940224", "00960425", "03940902", "00960275", "00960210", "00970209"]
 
 
 def fake_call_with_tools(react_messages):

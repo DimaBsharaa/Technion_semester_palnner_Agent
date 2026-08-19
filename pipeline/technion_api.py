@@ -37,6 +37,19 @@ _session = requests.Session()
 _cache_dir: Optional[Path] = None
 
 
+class EmptyResponseError(RuntimeError):
+    """The query succeeded but returned zero rows - a real, meaningful
+    answer (e.g. "this course isn't offered in this semester"), not a
+    network hiccup. Must never be retried the way a connection drop is:
+    retrying the identical query gets the identical empty result every
+    time, so send_request's backoff loop would otherwise wait forever
+    (found live: stuck retrying every 5 minutes, indefinitely, on a
+    course that simply wasn't offered in the target semester - the
+    caller's own fallback-semester loop in fetch_track_bundle.py needs
+    this to surface immediately so it can try the previous semester
+    instead)."""
+
+
 def set_cache_dir(path: Optional[Path]) -> None:
     """Cache every raw query response on disk, keyed by query hash. Lets a
     re-run pick up new semesters/courses without re-fetching ones already on
@@ -103,7 +116,7 @@ def _send_request(query: str, allow_empty: bool = False) -> dict:
     result = json.loads(json_str)
 
     if not allow_empty and result == {"d": {"results": []}}:
-        raise RuntimeError(f"Empty response for query: {query}")
+        raise EmptyResponseError(f"Empty response for query: {query}")
 
     if _cache_dir:
         _cache_path(query).write_text(
@@ -115,11 +128,14 @@ def _send_request(query: str, allow_empty: bool = False) -> dict:
 
 def send_request(query: str, allow_empty: bool = False) -> dict:
     """`_send_request` with exponential backoff - the endpoint occasionally
-    times out or drops the connection under load."""
+    times out or drops the connection under load. EmptyResponseError is
+    deliberately NOT retried here - see its docstring."""
     delay = 5
     while True:
         try:
             return _send_request(query, allow_empty)
+        except EmptyResponseError:
+            raise
         except Exception as e:
             print(f"  retrying ({e})")
             time.sleep(delay)
