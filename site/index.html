@@ -967,7 +967,7 @@ function saveSession(planResult) {
     localStorage.setItem('planner_session', JSON.stringify({
       trackId: selectedTrackId,
       trackName: document.getElementById('headerTrack').textContent,
-      messages, costUsd, knownContext,
+      messages, costUsd, knownContext, planHistory,
       lastPlanResult: planResult || (JSON.parse(localStorage.getItem('planner_session') || '{}').lastPlanResult || null),
       savedAt: Date.now(),
     }));
@@ -1008,13 +1008,21 @@ function applyRestoredSession(saved) {
   messages = saved.messages || [];
   costUsd = saved.costUsd ?? saved.cost_usd ?? 0;
   knownContext = saved.knownContext || saved.known_context || null;
+  // Only ever present on the SAME browser's localStorage (planHistory is a
+  // client-only feature, never sent to or stored by the backend) - a
+  // cross-device Supabase restore just starts with an empty stack, same as
+  // a brand-new conversation would.
+  planHistory = saved.planHistory || [];
   document.getElementById('headerTrack').textContent = saved.trackName || saved.track_name || '';
   document.getElementById('trackSelectForm').style.display = 'none';
   document.getElementById('composer').style.display = 'flex';
   budgetEl.textContent = `session cost: $${costUsd.toFixed(4)}`;
   intakeOptionsPromise = loadIntakeOptionsBackground();
   const plan = saved.lastPlanResult || saved.plan_result;
-  if (plan) renderPlanResult(plan);
+  if (plan) {
+    currentPlanResult = plan;
+    renderPlanResult(plan);
+  }
   inputEl.focus();
 }
 
@@ -1191,6 +1199,13 @@ let costUsd = 0;
 // message ("I have a wedding on an exam date") revise the existing plan
 // instead of the agent re-deriving everything and drafting a new one.
 let knownContext = null;
+// Whatever plan_result is currently on the desk, and the stack of every
+// plan+context pair it REPLACED - lets "Back to previous plan" restore a
+// full historical plan (not just its course numbers) and, critically,
+// rewind knownContext too, so the next real message revises from the
+// restored plan instead of the abandoned one.
+let currentPlanResult = null;
+let planHistory = [];
 // SHA-256 hex hash of the student's email, set only when they've typed one
 // in - the raw email itself never leaves the browser. When set, every
 // chat turn also gets saved server-side (Supabase) so it can be restored
@@ -1825,6 +1840,11 @@ function renderPlanResult(planResult, priorPlan) {
     ['🖨 ' + t('Print'), () => window.print()],
     ['📤 ' + t('Share image'), () => downloadPlanImage(planResult)],
   ];
+  // Only offered once there's actually somewhere to go back TO - no button
+  // on the very first plan of a conversation.
+  if (planHistory.length) {
+    tools.unshift(['⏪ ' + t('Back to previous plan'), () => goBackToPreviousPlan()]);
+  }
   for (const [label, fn] of tools) {
     const b = document.createElement('button');
     b.className = 'quick-chip';
@@ -1881,6 +1901,26 @@ function renderPlanResult(planResult, priorPlan) {
     : (heMode ? t('placeholder_fail') : 'Reply with an adjustment and I\'ll revise — e.g. "drop the course with unmet prerequisites".');
 
   saveSession(planResult);
+}
+
+// Pops the most recent entry off planHistory and makes it the active plan
+// again - both on screen (full re-render, so Print/calendar/share all work
+// exactly like they do for any other plan, since they're just closures
+// over whatever planResult gets passed to renderPlanResult) and for the
+// backend (knownContext rewinds too, so the NEXT real message revises from
+// the restored plan, not the one just abandoned). Repeatable - each click
+// steps one plan further back through the conversation's history.
+function goBackToPreviousPlan() {
+  if (!planHistory.length) return;
+  const entry = planHistory.pop();
+  knownContext = entry.known_context;
+  currentPlanResult = entry.plan_result;
+  // Keeps the transcript honest for later free-text turns and for anyone
+  // re-reading the chat log - a real thing that happened, not silently
+  // rewritten history.
+  messages = messages.concat([{ role: 'assistant', content: t('↩️ Reverted to the previous plan.') }]);
+  renderPlanResult(entry.plan_result);
+  addSystemNote(t('Reverted to your previous plan'));
 }
 
 // Friendly labels for the agent's real tool steps, streamed live into the
@@ -1982,6 +2022,14 @@ async function handleChatData(data) {
   // What the student had BEFORE this turn - captured before overwrite, so
   // a revised plan can show what changed relative to it.
   const priorPlan = (knownContext && knownContext.previous_plan) || null;
+  // A real new plan is about to replace the one on the desk - push it
+  // (plan + the context that made it "current") onto the history stack
+  // BEFORE either gets overwritten, so "Back to previous plan" has both
+  // the full old plan to re-render AND the right known_context to revise
+  // from afterward, not just the course-number list previous_plan carries.
+  if (data.plan_result && currentPlanResult) {
+    planHistory.push({ plan_result: currentPlanResult, known_context: knownContext });
+  }
   if (data.known_context) knownContext = data.known_context;
   budgetEl.textContent = `session cost: $${costUsd.toFixed(4)}`;
 
@@ -2002,6 +2050,7 @@ async function handleChatData(data) {
   document.getElementById('composer').style.display = 'flex';
 
   if (data.plan_result) {
+    currentPlanResult = data.plan_result;
     renderPlanResult(data.plan_result, priorPlan);
   } else {
     const last = messages[messages.length - 1];
