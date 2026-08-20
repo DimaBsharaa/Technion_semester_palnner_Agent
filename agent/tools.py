@@ -997,6 +997,7 @@ def check_invariants(
     passed_courses: list[str],
     failed_courses: list[str],
     approved_retake_course: str | None = None,
+    confirmed_grade_retakes: set[str] | None = None,
 ) -> list[str]:
     """A deterministic backstop, separate from verify_plan's plan-quality
     checks (schedule, credits, workload): these are data-integrity
@@ -1008,18 +1009,26 @@ def check_invariants(
     not a scheduling trade-off, so it's checked here rather than left to
     the drafting model to notice.
 
-    approved_retake_course: the ONE narrow, explicit exception - a passed
-    course the student just explicitly approved retaking for grade
-    improvement this turn (see agent_react_loop.py's proposed_retake /
-    approved_grade_retake flow). Every OTHER passed course still triggers
-    this check exactly as before; this is a single-course, single-turn
-    carve-out, never a general loophole.
+    approved_retake_course: a passed course the student just explicitly
+    approved retaking for grade improvement THIS turn (see
+    agent_react_loop.py's proposed_retake / approved_grade_retake flow).
+    confirmed_grade_retakes: every grade-improvement retake ever confirmed
+    across the WHOLE conversation, not just this turn - without this, the
+    exemption above (being single-turn only) meant an already-accepted
+    retake got treated as "plan re-includes an already-passed course" the
+    very next time the plan was touched for any reason at all, and got
+    silently stripped back out. Every OTHER passed course still triggers
+    this check exactly as before; these are the only two carve-outs, never
+    a general loophole.
 
     Returns a list of plain-language violation strings; empty means clean.
     This function raises nothing and calls no other tool - callers decide
     what to do with a non-empty result (e.g. force a repair, or refuse to
     deliver the plan at all)."""
     violations = []
+    retake_exempt = set(confirmed_grade_retakes or set())
+    if approved_retake_course:
+        retake_exempt.add(approved_retake_course)
 
     passed = set(passed_courses)
     failed = set(failed_courses)
@@ -1029,7 +1038,7 @@ def check_invariants(
         violations.append(f"course(s) {sorted(overlap)} are marked both passed and failed - contradictory state")
 
     already_passed_in_plan = [
-        c for c in plan_course_numbers if c in passed and c != approved_retake_course
+        c for c in plan_course_numbers if c in passed and c not in retake_exempt
     ]
     if already_passed_in_plan:
         violations.append(f"plan re-includes already-passed course(s) {sorted(already_passed_in_plan)}")
@@ -1057,6 +1066,7 @@ def verify_plan(
     max_credits: float = DEFAULT_MAX_CREDITS,
     min_mandatory_courses: int = DEFAULT_MIN_MANDATORY_COURSES,
     approved_retake_course: str | None = None,
+    confirmed_grade_retakes: set[str] | None = None,
     failed_courses: list[str] | None = None,
 ) -> dict:
     """The critic: checks a candidate plan against prerequisites, semester
@@ -1070,10 +1080,12 @@ def verify_plan(
     belongs in deterministic code, the same lesson that applies to every
     other check in this function.
 
-    approved_retake_course: same single-course, single-turn exception as
-    check_invariants - a passed course the student just explicitly approved
-    retaking for grade improvement. Every other passed course still fails
-    this check exactly as before.
+    approved_retake_course / confirmed_grade_retakes: same two exceptions
+    as check_invariants - a passed course just approved this turn, and
+    every grade-improvement retake ever confirmed across the whole
+    conversation (the latter is what lets an accepted retake survive past
+    the single turn it was approved on). Every other passed course still
+    fails this check exactly as before.
 
     failed_courses: a retake's own prerequisites were met the first time
     the student took it, so they're exempt from the prereq check below -
@@ -1087,6 +1099,9 @@ def verify_plan(
     excluded_weekdays = set(excluded_weekdays or [])
     passed = set(passed_courses)
     failed = set(failed_courses or [])
+    retake_exempt = set(confirmed_grade_retakes or set())
+    if approved_retake_course:
+        retake_exempt.add(approved_retake_course)
     issues = []
 
     unknown = [c for c in plan_course_numbers if c not in track.courses]
@@ -1095,7 +1110,7 @@ def verify_plan(
 
     for c in plan_course_numbers:
         course = track.courses[c]
-        if c in passed and c != approved_retake_course:
+        if c in passed and c not in retake_exempt:
             issues.append({"course": c, "reason": "already passed - can't be retaken or counted again"})
         if not course["offered_next_semester"]:
             issues.append({"course": c, "reason": f"not offered in {track.target_semester}"})

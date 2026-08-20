@@ -828,6 +828,16 @@ def resolve_verify_kwargs(state: dict) -> dict:
     # separate threading anywhere else. See tools.verify_plan's docstring.
     if state.get("approved_retake_course"):
         kwargs["approved_retake_course"] = state["approved_retake_course"]
+    # Every grade-improvement retake ever confirmed in this conversation,
+    # not just one just approved THIS turn - found live, approved_retake_course
+    # resets to None every turn by design (see agent_react_loop.py), so on
+    # ANY later turn (even one totally unrelated to the retake) this
+    # exemption alone made verify_plan/check_invariants treat an already-
+    # accepted retake as "plan re-includes an already-passed course" and
+    # Python actively stripped it back out - a retake the student explicitly
+    # confirmed could only ever survive exactly one turn. This persists for
+    # the rest of the conversation instead, same as passed/failed_courses.
+    kwargs["confirmed_grade_retakes"] = state.get("confirmed_grade_retakes") or set()
     # Retakes are exempt from verify_plan's prereq check (their prereqs
     # were met the first time around) - see verify_plan's docstring. Always
     # included, unconditionally, unlike approved_retake_course above.

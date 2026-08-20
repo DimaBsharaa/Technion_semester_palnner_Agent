@@ -775,6 +775,78 @@ finally:
     script_deliver_without_colliding_add.n = 0
 
 
+# --- Test 15: a confirmed retake survives a LATER, unrelated turn ---
+# Found live: approved_retake_course resets to None every turn by design
+# (the "single-course, single-turn carve-out" check_invariants/verify_plan
+# always documented it as). That meant a retake accepted in turn N had
+# real protection ONLY on turn N - on turn N+1, even a totally unrelated
+# revision, check_invariants saw the already-passed retake course still
+# sitting in the plan, had no exemption for it anymore, flagged it as
+# "plan re-includes an already-passed course," and Python's own violation
+# correction silently stripped it back out - not the model dropping it,
+# Python itself. Test 10 above only ever checks the turn it's approved on;
+# this checks the turn AFTER, which is where the real bug lived.
+print("--- a confirmed retake survives a later, unrelated revision turn ---")
+
+
+def script_deliver_without_retake_unrelated_turn(_messages):
+    # A plan that quietly omits the retake while handling something else -
+    # never told to remove it, never re-asked about it either.
+    return msg([tool_call("deliver_plan", {"course_numbers": ["03940804"], "explanation": "here"})]), 0.0
+
+
+later_turn_state = state_with_prereqs_for_strong()
+# Deliberately NOT setting requested_retake_course/approved_retake_course
+# this turn - simulates the retake having been approved in an EARLIER
+# turn, with nothing about it said again now.
+later_turn_known_context = {
+    "state": {
+        "semester_number": 4,
+        "constraints": {"excluded_weekdays": [], "pace": "normal", "notes": "", "override_minimums": False},
+        "passed_courses": ["00940224", "00960570"],
+        "failed_courses": [],
+        "grades": {},
+        "confirmed_grade_retakes": [RETAKE_TARGET],
+    },
+    "previous_plan": [RETAKE_TARGET, "03940804"],
+    "previous_issues": [],
+    "previous_explanation": "Added the retake last turn.",
+    "proposed_retake": None,
+    "pending_forced_add": None,
+}
+
+arl._call_with_tools = script_deliver_without_retake_unrelated_turn
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID,
+        [{"role": "user", "content": "can you check if this still fits my schedule"}],
+        0.0,
+        state_override=later_turn_state,
+        known_context=later_turn_known_context,
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    invariant_entry = next((t for t in res["tool_log"] if t["name"] == "check_invariants"), None)
+    retake_course = next((c for c in res["plan_result"]["courses"] if c["course_number"] == RETAKE_TARGET), None)
+    check(
+        invariant_entry is None
+        or not any(RETAKE_TARGET in v for v in invariant_entry["result"]["violations"]),
+        "check_invariants never flags the confirmed retake as an illegal already-passed re-inclusion",
+    )
+    check(RETAKE_TARGET in delivered, "the confirmed retake IS in the plan on a later, unrelated turn")
+    check("approved_retake_guaranteed" in names, "the guarantee backstop is what put it back, not the model")
+    check(
+        retake_course is not None and retake_course["is_retake"] is True,
+        "the RETAKE badge still shows on a later turn, not just the turn it was approved on",
+    )
+    check(
+        sorted(res["known_context"]["state"]["confirmed_grade_retakes"]) == [RETAKE_TARGET],
+        "the confirmation keeps persisting forward into the NEXT known_context too",
+    )
+finally:
+    arl._call_with_tools = orig
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")

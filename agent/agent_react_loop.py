@@ -726,6 +726,10 @@ def run_agent_turn_v2(
                     "passed_courses": state.get("passed_courses"),
                     "failed_courses": state.get("failed_courses"),
                     "grades": state.get("grades", {}),
+                    # This turn never reached the point where a fresh
+                    # approval could be resolved - just carry forward
+                    # whatever was already confirmed in earlier turns.
+                    "confirmed_grade_retakes": sorted((known_state or {}).get("confirmed_grade_retakes") or []),
                 },
                 "previous_plan": previous_plan,
                 "previous_issues": sorted(previous_issues),
@@ -766,6 +770,26 @@ def run_agent_turn_v2(
                 "result": {"course_number": state["approved_retake_course"]},
             }
         )
+
+    # Persists a grade-improvement retake beyond the single turn it was
+    # approved on - found live, approved_retake_course above resets to None
+    # every turn by design, so on ANY later turn (even one about something
+    # totally unrelated, like asking about a different course) the ONLY
+    # exemption verify_plan/check_invariants had for it just disappeared:
+    # they flagged it as "plan re-includes an already-passed course" and
+    # Python actively stripped it back out of the plan, even when the model
+    # correctly tried to keep it. A retake the student explicitly confirmed
+    # should never have a shelf life of exactly one turn. Union, never
+    # replace - carries every retake ever confirmed in this conversation,
+    # same lifecycle as passed_courses/failed_courses. requested_removals
+    # (a few lines below, already resolved by the time this reads it - see
+    # ordering) still lets the student explicitly drop it later if they
+    # change their mind; this only prevents it vanishing on its own.
+    state["confirmed_grade_retakes"] = set((known_state or {}).get("confirmed_grade_retakes") or [])
+    if state.get("approved_retake_course"):
+        state["confirmed_grade_retakes"].add(state["approved_retake_course"])
+    state["confirmed_grade_retakes"] -= set(state.get("remove_courses") or [])
+
     excluded_weekdays = state["constraints"].get("excluded_weekdays") or []
     verify_kwargs = resolve_verify_kwargs(state)
 
@@ -1210,7 +1234,12 @@ def run_agent_turn_v2(
                     track, candidate, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
                 )
                 violations = tools.check_invariants(
-                    track, candidate, passed, failed, approved_retake_course=state.get("approved_retake_course")
+                    track,
+                    candidate,
+                    passed,
+                    failed,
+                    approved_retake_course=state.get("approved_retake_course"),
+                    confirmed_grade_retakes=state.get("confirmed_grade_retakes"),
                 )
                 if violations:
                     tool_log.append({"name": "check_invariants", "args": {}, "result": {"violations": violations}})
@@ -1307,20 +1336,21 @@ def run_agent_turn_v2(
                     )
                     continue
 
-                # Retake-dropped pushback: a failed course the student did
-                # NOT ask to remove is missing from the delivery. Priority
-                # rule #1 (a failed course is retaken now) lived only in the
-                # prompt, and under revision pressure ("I have a conflict on
-                # that exam date") the model was observed live silently
-                # dropping the retake to satisfy the request. One shot: send
-                # it back with the dropped course(s) named - reinstate and
-                # rebalance, or deliver anyway with the omission explained
-                # honestly. Second delivery stands (the honest-disclosure
-                # explanation rules already cover it). Only fires for
-                # courses actually offered next semester - a retake that
-                # cannot be taken at all is a legitimate omission.
+                # Retake-dropped pushback: a failed course OR a confirmed
+                # grade-improvement retake the student did NOT ask to remove
+                # is missing from the delivery. Priority rule #1 (a required
+                # retake is retaken now) lived only in the prompt, and under
+                # revision pressure ("I have a conflict on that exam date")
+                # the model was observed live silently dropping the retake
+                # to satisfy the request. One shot: send it back with the
+                # dropped course(s) named - reinstate and rebalance, or
+                # deliver anyway with the omission explained honestly.
+                # Second delivery stands (the honest-disclosure explanation
+                # rules already cover it). Only fires for courses actually
+                # offered next semester - a retake that cannot be taken at
+                # all is a legitimate omission.
                 dropped_retakes = [
-                    c for c in failed
+                    c for c in (set(failed) | (state.get("confirmed_grade_retakes") or set()))
                     if c not in candidate
                     and c not in requested_removals
                     and track.courses.get(c, {}).get("offered_next_semester")
@@ -1545,7 +1575,12 @@ def run_agent_turn_v2(
                     {"name": "wrapup_kept_seed", "args": {}, "result": {"reason": "no model candidate beat the student's own plan"}}
                 )
         violations = tools.check_invariants(
-            track, final_course_numbers, passed, failed, approved_retake_course=state.get("approved_retake_course")
+            track,
+            final_course_numbers,
+            passed,
+            failed,
+            approved_retake_course=state.get("approved_retake_course"),
+            confirmed_grade_retakes=state.get("confirmed_grade_retakes"),
         )
         if violations:
             seen = set()
@@ -1661,27 +1696,37 @@ def run_agent_turn_v2(
     # checked here unconditionally, after path selection but before the
     # mandatory/credit top-ups below (so their own counts already include
     # it), collision-checked since nothing but the later overlap backstop
-    # runs after this.
+    # runs after this. Covers every retake ever confirmed this conversation
+    # (state["confirmed_grade_retakes"]), not just one approved THIS turn -
+    # otherwise this exact guarantee had the same one-turn shelf life as
+    # the check_invariants/verify_plan exemption above, and a retake
+    # confirmed two turns ago had nothing left protecting it here either.
     approved = state.get("approved_retake_course")
-    if (
-        approved
-        and final_course_numbers
-        and approved not in final_course_numbers
-        and track.courses.get(approved, {}).get("offered_next_semester")
-    ):
-        droppable = sorted(
-            (c for c in final_course_numbers if c not in track.mandatory_course_numbers and c != approved),
-            key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
-        )
-        if droppable:
-            final_course_numbers = [c for c in final_course_numbers if c != droppable[0]]
-        final_course_numbers = final_course_numbers + [approved]
-        approved_name = track.courses[approved]["name"] if approved in track.courses else approved
-        last_verify_result = tools.verify_plan(
-            track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
-        )
-        final_explanation += f" Note: added your approved retake of {approved_name}."
-        tool_log.append({"name": "approved_retake_guaranteed", "args": {}, "result": {"course_number": approved}})
+    retake_targets = sorted(
+        (({approved} if approved else set()) | (state.get("confirmed_grade_retakes") or set()))
+        - set(requested_removals)
+    )
+    for retake_target in retake_targets:
+        if (
+            final_course_numbers
+            and retake_target not in final_course_numbers
+            and track.courses.get(retake_target, {}).get("offered_next_semester")
+        ):
+            droppable = sorted(
+                (c for c in final_course_numbers if c not in track.mandatory_course_numbers and c != retake_target),
+                key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
+            )
+            if droppable:
+                final_course_numbers = [c for c in final_course_numbers if c != droppable[0]]
+            final_course_numbers = final_course_numbers + [retake_target]
+            retake_name = track.courses[retake_target]["name"] if retake_target in track.courses else retake_target
+            last_verify_result = tools.verify_plan(
+                track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+            )
+            final_explanation += f" Note: added your confirmed retake of {retake_name}."
+            tool_log.append(
+                {"name": "approved_retake_guaranteed", "args": {}, "result": {"course_number": retake_target}}
+            )
 
     # HARD locked-course backstop: a course whose prerequisites aren't met
     # cannot be registered for, period - strip it on any delivery path.
@@ -1716,9 +1761,12 @@ def run_agent_turn_v2(
             pair = section_check["overlaps"][0]
             a, b = pair["course_a"], pair["course_b"]
 
+            confirmed_retakes = state.get("confirmed_grade_retakes") or set()
+
             def keep_value(c):
                 course = track.courses.get(c, {})
-                return (c in failed, c in track.mandatory_course_numbers, float(course.get("points") or 0))
+                is_required_retake = c in failed or c in confirmed_retakes
+                return (is_required_retake, c in track.mandatory_course_numbers, float(course.get("points") or 0))
 
             drop = a if keep_value(a) <= keep_value(b) else b
             final_course_numbers = [c for c in final_course_numbers if c != drop]
@@ -1807,13 +1855,17 @@ def run_agent_turn_v2(
             def _plan_points(nums):
                 return sum(float(track.courses[c].get("points") or 0) for c in nums if c in track.courses)
 
-            # Never drop a mandatory course already in the plan or the
-            # approved retake - only genuine filler is fair game, cheapest
-            # (least degree value) first.
+            # Never drop a mandatory course already in the plan, or any
+            # retake ever confirmed this conversation (not just one
+            # approved this turn) - only genuine filler is fair game,
+            # cheapest (least degree value) first.
+            retake_protected = ({state.get("approved_retake_course")} if state.get("approved_retake_course") else set()) | (
+                state.get("confirmed_grade_retakes") or set()
+            )
             droppable = sorted(
                 (
                     c for c in final_course_numbers
-                    if c not in track.mandatory_course_numbers and c != state.get("approved_retake_course")
+                    if c not in track.mandatory_course_numbers and c not in retake_protected
                 ),
                 key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
             )
@@ -2104,7 +2156,11 @@ def run_agent_turn_v2(
                 # retake (an already-PASSED course, deliberately retaken) are
                 # both real retakes to the student - the RETAKE badge should
                 # show for either, not just the failed case.
-                "is_retake": c in failed or c == state.get("approved_retake_course"),
+                "is_retake": (
+                    c in failed
+                    or c == state.get("approved_retake_course")
+                    or c in (state.get("confirmed_grade_retakes") or set())
+                ),
                 "is_mandatory": c in track.mandatory_course_numbers,
                 "schedule": track.courses[c]["schedule"],
                 # The coordinated section assignment - one coherent group
@@ -2137,6 +2193,7 @@ def run_agent_turn_v2(
                 "passed_courses": passed,
                 "failed_courses": failed,
                 "grades": state.get("grades", {}),
+                "confirmed_grade_retakes": sorted(state.get("confirmed_grade_retakes") or []),
             },
             "previous_plan": final_course_numbers,
             # The delivered plan's open verify issues, so the NEXT turn can
