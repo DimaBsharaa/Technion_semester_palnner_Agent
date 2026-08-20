@@ -6,7 +6,7 @@
 <title>APEX - Semester Planning Agent</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%231C5E43'/%3E%3Cpath d='M18 5.5 L29.5 10.5 L18 15.5 L6.5 10.5 Z' fill='%23F2EBDD'/%3E%3Cpath d='M29.5 11 V16' stroke='%23F2EBDD' stroke-width='1.9' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='29.5' cy='17.9' r='1.8' fill='%23F2EBDD'/%3E%3Cpath d='M8.5 30.5 C8.5 22.5 11.5 19.8 17.5 18.3' stroke='%23F2EBDD' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-dasharray='0.1 4.8'/%3E%3Ccircle cx='8.5' cy='30.5' r='2.3' fill='%23F2EBDD'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,500;1,600&family=Instrument+Sans:wght@500;600;700&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <style>
   :root {
     /* Minimal-luxury light: warm beige/parchment ground, deep emerald +
@@ -30,17 +30,12 @@
     --accent-soft: rgba(28,94,67,.07);
     --glow1: rgba(28,94,67,.06); --glow2: rgba(199,154,82,.10);
     --dotc: rgba(42,35,24,.06);
-    /* Three roles, deliberately not one font doing everything: Instrument
-       Sans carries UI text/labels/badges (needs to stay crisp at 10-12px,
-       where a display serif goes muddy); Inter carries long-form body copy
-       (explanations, reviews) for maximum reading comfort; Fraunces
-       (headline-only, italic) and Instrument Serif (smaller accents) are
-       reserved for the few genuine editorial moments - the welcome hero
-       and handwritten-note-style touches - never small UI chrome. */
-    --disp: 'Instrument Sans', Inter, system-ui, sans-serif;
-    --body: 'Inter', system-ui, sans-serif;
-    --hand: 'Instrument Serif', Georgia, serif;
-    --headline: 'Fraunces', Georgia, serif;
+    /* One professional, plain typeface for everything - Open Sans, system
+       font stack as fallback. */
+    --disp: 'Open Sans', system-ui, sans-serif;
+    --body: 'Open Sans', system-ui, sans-serif;
+    --hand: 'Open Sans', system-ui, sans-serif;
+    --headline: 'Open Sans', system-ui, sans-serif;
     --shadow: 0 1px 3px rgba(42,35,24,.04), 0 10px 28px rgba(42,35,24,.06);
     --shadow-lg: 0 6px 16px rgba(42,35,24,.06), 0 30px 60px rgba(42,35,24,.10);
     --ring: 0 0 0 3px rgba(28,94,67,.16);
@@ -1092,7 +1087,7 @@ function downloadPlanImage(planResult) {
   ctx.fillStyle = '#F2EBDD'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#1C5E43'; ctx.fillRect(0, 0, W, 84);
   ctx.fillStyle = '#F8F3E8';
-  ctx.font = 'italic 600 28px "Fraunces", Georgia, serif';
+  ctx.font = '700 28px "Open Sans", sans-serif';
   ctx.textAlign = 'left';
   ctx.fillText('Semester Plan', 24, 42);
   ctx.font = '400 15px Inter, sans-serif';
