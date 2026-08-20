@@ -986,6 +986,17 @@ async function sha256hex(text) {
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Session save/restore is scoped to real Technion student accounts only -
+// this is a client-side gate (the backend only ever sees the SHA-256 hash,
+// never the address itself, so it has no way to check the domain). Not a
+// security boundary (anyone can edit client JS), just keeps an honest
+// student from typing a personal Gmail and silently never finding their
+// session again on a different device.
+const TECHNION_EMAIL_DOMAIN = '@campus.technion.ac.il';
+function isTechnionCampusEmail(email) {
+  return email.toLowerCase().endsWith(TECHNION_EMAIL_DOMAIN);
+}
+
 // Shared by both restore paths: the existing same-browser localStorage
 // "Continue where you left off" flow, and the new cross-device
 // email-lookup flow (GET /session). Tolerates both payload shapes - the
@@ -2093,9 +2104,13 @@ async function selectTrack(track) {
   // there's nothing to restore on a first-ever visit), start saving THIS
   // new session server-side from here on.
   const email = document.getElementById('restoreEmail').value.trim();
-  if (email) {
+  const note = document.getElementById('restoreNote');
+  if (email && isTechnionCampusEmail(email)) {
     studentKey = await sha256hex(email.toLowerCase());
     try { localStorage.setItem('planner_email', email); } catch {}
+  } else if (email) {
+    note.textContent = `Session saving needs a Technion campus email (ending in ${TECHNION_EMAIL_DOMAIN}) - continuing without saving this session.`;
+    note.style.display = 'block';
   }
   document.getElementById('headerTrack').textContent = track.name;
   document.getElementById('trackSelectForm').style.display = 'none';
@@ -2487,6 +2502,11 @@ document.getElementById('restoreBtn').addEventListener('click', async () => {
   note.style.display = 'none';
   if (!email) {
     note.textContent = 'Enter your Technion email first.';
+    note.style.display = 'block';
+    return;
+  }
+  if (!isTechnionCampusEmail(email)) {
+    note.textContent = `Please use your Technion campus email (ending in ${TECHNION_EMAIL_DOMAIN}).`;
     note.style.display = 'block';
     return;
   }

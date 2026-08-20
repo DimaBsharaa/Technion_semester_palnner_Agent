@@ -370,8 +370,15 @@ delay my degree, include X") - resolve names to numbers via the catalog \
 above. This is a NOT-yet-passed course they want taken THIS semester, \
 different from "requested_retake_course" above (which is for a course \
 they've ALREADY passed). Naming a course while asking "what do you think \
-of X" or "is X hard" is NOT a request to add it - only a clear ask to \
-include/add/take it counts. Empty list otherwise.
+of X", "is X hard", or "how would X fit with my workload/schedule" is NOT \
+a request to add it, even when the phrasing sounds positive or curious - \
+these are exploratory questions, not decisions, and must stay "question" \
+intent below with question_courses set, never requested_add_courses. Only \
+an unambiguous instruction ("add it", "put it in", "take it") - never an \
+open-ended "what about X" - counts as a request. When genuinely unsure \
+which this is, treat it as a question: silently adding a course changes \
+what the student is paying credits/workload for, so guessing wrong here \
+is worse than asking again next turn. Empty list otherwise.
 - "approved_grade_retake": the 8-digit course number ONLY when a specific \
 grade-improvement retake was proposed to the student last turn (see below) \
 AND their latest message clearly accepts it. null otherwise. Never set \
@@ -393,9 +400,18 @@ it up on their own, with no prior proposal. null when nothing like this \
 was said. The course this refers to MUST also appear in passed_courses.
 - "intent": "question" ONLY when the latest message is purely asking for \
 information or opinion ("is X hard?", "what do students say about Y?", \
-"which is easier, A or B?") with NO request to build or change a plan; \
-otherwise "plan". A change request ("swap X", "make it lighter") is \
-"plan", not "question".
+"which is easier, A or B?", "how would X fit with my workload/schedule?") \
+with NO request to build or change a plan; otherwise "plan". Found live: \
+"what about X? how would it fit with my last semester's workload" got \
+misread as a request to add X (and, worse, silently dropped an already-\
+confirmed course to make room) - it is a feasibility QUESTION, "question" \
+intent, same as "is X hard". A change request is unambiguous action \
+language directed at THIS semester's plan ("swap X", "make it lighter", \
+"add X", "remove X") - "plan", not "question". When a message could \
+honestly read either way, prefer "question": answering costs nothing and \
+can always be followed by an explicit add next turn, while wrongly \
+mutating the plan risks silently discarding something the student already \
+decided on.
 - "question_courses": when intent is "question", the 8-digit numbers of \
 the course(s) being asked about (resolved via the catalog); else [].
 - "ready_to_plan": true once you have enough of the mandatory list's \
