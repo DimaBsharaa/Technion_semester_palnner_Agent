@@ -154,6 +154,7 @@ import tools as _tools  # noqa: E402
 
 orig_verify = _tools.verify_plan
 orig_inv = _tools.check_invariants
+orig_choose_sections = _tools.choose_sections
 
 
 def stub_verify(track_, plan, passed_, **kw):
@@ -635,6 +636,143 @@ check(
     excessive_score > _tools.DEFAULT_WORKLOAD_CAP,
     f"a genuinely excessive stack ({excessive_score}) still correctly exceeds the cap",
 )
+
+
+# --- Test 13: a requested-but-unavailable course is explained, never force-added ---
+# Found live: add_enforced had no guard at all against blindly forcing a
+# course that isn't even offered this semester into the plan - unlike the
+# retake-approval enforcement, which already refuses to do that. There's no
+# section to register for either way, so this must never be "forced in no
+# matter what" the way a schedule/room trade-off can be (Test 14) - it can
+# only ever be explained.
+print("--- requested-but-unavailable course is explained, never force-added ---")
+
+UNAVAILABLE_TARGET = "03940582"  # תזמורת - confirmed not-offered across all 3 tracks
+
+
+def script_deliver_ignoring_unavailable_request(_messages):
+    return msg([tool_call("deliver_plan", {"course_numbers": ["03940804"], "explanation": "here you go"})]), 0.0
+
+
+unavailable_state = state_with_prereqs_for_strong()
+unavailable_state["requested_add_courses"] = [UNAVAILABLE_TARGET]
+
+arl._call_with_tools = script_deliver_ignoring_unavailable_request
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": f"add {UNAVAILABLE_TARGET} please"}], 0.0, state_override=unavailable_state
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    explanation = res["plan_result"]["explanation"]
+    adds_entry = next((t for t in res["tool_log"] if t["name"] == "requested_adds"), None)
+    check(
+        adds_entry is not None and UNAVAILABLE_TARGET in adds_entry["result"]["unavailable"],
+        "the unavailable course is recognized and logged, not treated as forceable",
+    )
+    check("add_enforced" not in names, "add_enforced never even attempts an unavailable course")
+    check(
+        UNAVAILABLE_TARGET not in [c["course_number"] for c in res["plan_result"]["courses"]],
+        "an unavailable course is never force-added, no matter what",
+    )
+    check(track.courses[UNAVAILABLE_TARGET]["name"] in explanation, "the unavailable course is named in the explanation")
+    check(
+        res["known_context"].get("pending_forced_add") is None,
+        "no override is ever offered for a course that genuinely isn't offered",
+    )
+finally:
+    arl._call_with_tools = orig
+
+
+# --- Test 14: a requested add that collides is negotiated, then forced in on confirmation ---
+# Found live: a student asked to add a specific course FIVE TIMES across
+# revision turns and it just kept silently vanishing - add_enforced forced
+# it in blindly (no collision awareness), then the separate, real
+# collision backstop quietly dropped it again with a generic note that
+# never acknowledged it was an explicit request. Unlike Test 13's hard
+# block, a schedule collision is the STUDENT's trade-off to accept, not
+# Python's or the model's to silently decide - this checks both halves:
+# the negotiation offer, and the confirmed override actually landing.
+print("--- explicit add that collides is negotiated, then forced in on confirmation ---")
+
+ADD_TARGET2 = "03940800"  # non-mandatory, offered, unlocked - real points (1.0) < REMAIN_COURSE's (2.5)
+REMAIN_COURSE = "00960226"  # survives add_enforced's cheapest-first drop, and the collision comparison
+CHEAP_FILLER = "03940804"  # cheapest droppable - what add_enforced sacrifices to make room
+
+
+def stub_choose_sections_conflict(track_, course_numbers, excluded_weekdays=None):
+    overlaps = (
+        [{"course_a": ADD_TARGET2, "course_b": REMAIN_COURSE, "time": "Mon 10:30-12:30"}]
+        if ADD_TARGET2 in course_numbers and REMAIN_COURSE in course_numbers
+        else []
+    )
+    return {"assignments": {c: [] for c in course_numbers}, "overlaps": overlaps, "excluded_day_hits": []}
+
+
+def script_deliver_without_colliding_add(_messages):
+    n = getattr(script_deliver_without_colliding_add, "n", 0)
+    script_deliver_without_colliding_add.n = n + 1
+    if n == 0:
+        return msg([tool_call("verify_plan", {"plan_course_numbers": [REMAIN_COURSE, CHEAP_FILLER]})]), 0.0
+    return msg([tool_call("deliver_plan", {"course_numbers": [REMAIN_COURSE, CHEAP_FILLER], "explanation": "here"})]), 0.0
+
+
+collide_state = state_with_prereqs_for_strong()
+collide_state["requested_add_courses"] = [ADD_TARGET2]
+
+arl._call_with_tools = script_deliver_without_colliding_add
+_tools.choose_sections = stub_choose_sections_conflict
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": f"add {ADD_TARGET2} please"}], 0.0, state_override=collide_state
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    explanation = res["plan_result"]["explanation"]
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    pending = res["known_context"].get("pending_forced_add")
+    check("forced_add_enforced" not in names, "not forced in without confirmation")
+    check(ADD_TARGET2 not in delivered, "the colliding course is not silently included")
+    check(REMAIN_COURSE in delivered, "the course it collides with is kept, not both silently dropped")
+    check(
+        track.courses[ADD_TARGET2]["name"] in explanation and "collide" in explanation,
+        "the specific collision reason is named in the explanation, not left silent",
+    )
+    check(
+        "anyway" in explanation.lower() or "confirm" in explanation.lower(),
+        "the student is asked whether to force it in despite the trade-off",
+    )
+    check(
+        pending is not None and pending["course_number"] == ADD_TARGET2,
+        "the offer to force it in survives into the next turn's known_context",
+    )
+
+    # Turn 2: a bare "yes, add it anyway" - no course named again, exactly
+    # how a real confirmation reads. requested_add_courses is deliberately
+    # left empty here to prove the confirmation doesn't depend on the
+    # student re-naming the course.
+    confirm_state = state_with_prereqs_for_strong()
+    confirm_state["confirmed_forced_add"] = ADD_TARGET2
+    res2 = arl.run_agent_turn_v2(
+        TRACK_ID,
+        [{"role": "user", "content": "yes, add it anyway"}],
+        0.0,
+        state_override=confirm_state,
+        known_context={"pending_forced_add": pending},
+    )
+    names2 = [t["name"] for t in res2["tool_log"]]
+    delivered2 = [c["course_number"] for c in res2["plan_result"]["courses"]]
+    explanation2 = res2["plan_result"]["explanation"]
+    check("forced_add_confirmed" in names2, "the confirmation is recognized against the real pending offer")
+    check("forced_add_enforced" in names2, "forced in on confirmation, despite no course name this turn")
+    check(ADD_TARGET2 in delivered2, "the course IS in the final delivered plan after confirmation")
+    check("confirmed" in explanation2.lower(), "the explanation acknowledges this was a confirmed override")
+    check(
+        any("collide" in i["reason"] or "overlap" in i["reason"] for i in res2["plan_result"]["verify"]["issues"]),
+        "the resulting trade-off is disclosed as an open issue, not hidden now that it's included",
+    )
+finally:
+    arl._call_with_tools = orig
+    _tools.choose_sections = orig_choose_sections
+    script_deliver_without_colliding_add.n = 0
 
 
 print()

@@ -245,6 +245,7 @@ def _extract_student_state(
     messages: list[dict],
     known_state: dict | None = None,
     proposed_retake: dict | None = None,
+    pending_forced_add: dict | None = None,
 ) -> tuple[dict, float]:
     known_state_note = ""
     if known_state:
@@ -275,6 +276,18 @@ If they decline, ignore it, or talk about something else, leave \
 "approved_grade_retake" empty - never guess acceptance from silence or an \
 unrelated reply, and never treat this as a reason to ask about it again \
 yourself."""
+
+    if pending_forced_add:
+        known_state_note += f"""
+
+Last turn, you told the student you could NOT add {pending_forced_add.get("name")} \
+({pending_forced_add.get("course_number")}) because {pending_forced_add.get("reason")}, \
+and asked whether to add it anyway despite that trade-off. Check the \
+student's latest message: if it CLEARLY confirms (e.g. "yes", "add it \
+anyway", "do it no matter what", "force it in"), set "confirmed_forced_add" \
+to "{pending_forced_add.get("course_number")}". If they decline, ignore it, \
+or talk about something else, leave "confirmed_forced_add" empty - never \
+guess confirmation from silence or an unrelated reply."""
 
     system = {
         "role": "system",
@@ -364,6 +377,11 @@ grade-improvement retake was proposed to the student last turn (see below) \
 AND their latest message clearly accepts it. null otherwise. Never set \
 this unless a proposal was actually made - see the note below for exactly \
 which course, if any.
+- "confirmed_forced_add": the 8-digit course number ONLY when you told the \
+student last turn you couldn't add a specific course they'd requested \
+(see below) AND their latest message clearly confirms they want it added \
+anyway despite the trade-off. null otherwise. Never set this unless that \
+exact proposal was actually made last turn.
 - "requested_retake_course": the 8-digit course number ONLY when the \
 student THEMSELVES, unprompted, explicitly asks to retake/redo/repeat/ \
 improve a SPECIFIC course they've already passed (e.g. "I need to improve \
@@ -477,6 +495,8 @@ def _normalize_state(state: dict) -> dict:
     state["failed_courses"] = sorted(failed_set)
     approved_retake = state.get("approved_grade_retake")
     state["approved_grade_retake"] = str(approved_retake).zfill(8) if approved_retake else None
+    confirmed_forced_add = state.get("confirmed_forced_add")
+    state["confirmed_forced_add"] = str(confirmed_forced_add).zfill(8) if confirmed_forced_add else None
     requested_retake = state.get("requested_retake_course")
     if requested_retake:
         requested_retake = str(requested_retake).zfill(8)
@@ -647,27 +667,42 @@ def answer_course_question(
     actually said instead of guessing."""
     previous_explanation = (known_context or {}).get("previous_explanation")
     course_numbers = [c for c in state.get("question_courses", []) if c in track.courses]
+    grades = state.get("grades") or {}
+    known_grade_values = list(grades.values())
+    your_own_average = round(sum(known_grade_values) / len(known_grade_values), 1) if known_grade_values else None
     course_blocks = []
     for c in course_numbers:
         course = track.courses[c]
         cf = course["cheesefork"]
         exams = course["exams"].get("moed_a", [])
-        course_blocks.append(
-            json.dumps(
-                {
-                    "course_number": c,
-                    "name": course["name"],
-                    "points": course["points"],
-                    "avg_difficulty_1to5": cf["avg_difficulty"],
-                    "avg_satisfaction_1to5": cf["avg_general"],
-                    "review_count": cf["review_count"],
-                    "review_excerpts": cf.get("sample_reviews", []),
-                    "exam_moed_a": exams[0]["date"] if exams else None,
-                    "mandatory": c in track.mandatory_course_numbers,
-                },
-                ensure_ascii=False,
-            )
-        )
+        block = {
+            "course_number": c,
+            "name": course["name"],
+            "points": course["points"],
+            "avg_difficulty_1to5": cf["avg_difficulty"],
+            "avg_satisfaction_1to5": cf["avg_general"],
+            "review_count": cf["review_count"],
+            "review_excerpts": cf.get("sample_reviews", []),
+            "exam_moed_a": exams[0]["date"] if exams else None,
+            "mandatory": c in track.mandatory_course_numbers,
+        }
+        # Found live: a student who'd already uploaded a transcript (so
+        # their grade WAS known in state) asked "do you recommend retaking
+        # it" and got told "I can't see your grade" - this function used to
+        # never look at state["grades"] or grade_stats at all, only
+        # CheeseFork sentiment, even though both were sitting right there.
+        # Same two-baseline comparison analyze_grade_improvement_candidates
+        # gives the planning loop, just for a direct question instead of a
+        # plan turn - grade data is opportunistic, so both stay null/absent
+        # when genuinely unknown rather than prompting the model to ask for
+        # them.
+        if c in grades:
+            block["your_grade"] = grades[c]
+            block["your_own_average_across_known_grades"] = your_own_average
+            stats = course.get("grade_stats")
+            if stats:
+                block["course_historical_average_grade"] = stats["avg_grade"]
+        course_blocks.append(json.dumps(block, ensure_ascii=False))
     last_user = next((m for m in reversed(messages) if m.get("role") == "user"), {})
     previous_explanation_block = (
         f'\nWhat you told this student when you last delivered a plan: "{previous_explanation}"\n'
@@ -687,6 +722,19 @@ numbers, quote a short phrase from a real review when it supports your \
 point (in its original language), and be honest when the sample is thin \
 (low review_count). If the student compares courses, compare directly. Do \
 not offer to build or change a plan - just answer.
+
+If asked whether to retake a course for grade improvement, a course block \
+below has "your_grade" ONLY when their grade is actually known - use it \
+together with "course_historical_average_grade" and \
+"your_own_average_across_known_grades" (both baselines matter: a 70 means \
+something different for a student who otherwise averages 90 than one who \
+averages 72) plus real review sentiment to give an honest, reasoned take. \
+Never claim you can't see their grade when "your_grade" is present. If it's \
+genuinely absent, say so plainly and never ask them to provide it - grades \
+are opportunistic here, never solicited. Never claim Technion's actual \
+grade-improvement policy (eligibility, attempt limits, which grade counts) \
+is satisfied - that isn't verified here, only whether retaking looks \
+worthwhile on the numbers.
 
 If the question has NOTHING to do with this student's courses, degree, or \
 semester planning (e.g. general trivia, current events, something about a \

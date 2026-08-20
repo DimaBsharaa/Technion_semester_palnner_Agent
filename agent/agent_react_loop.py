@@ -492,6 +492,15 @@ to 13 credits) is a worse outcome than a somewhat heavy but real semester. \
 When a genuinely fewer-credits plan is the right call, that's the \
 student's decision (pace="light" or override_minimums), not a silent one \
 you make for them by over-trimming.
+- The same rule applies even when the workload score is nowhere near the \
+cap: a mandatory course officially placed in the student's CURRENT target \
+semester is never "deferred for a lighter pacing" or "the safer choice for \
+a brand-new student" as your own judgment call - only a genuine schedule \
+conflict or an unmet prerequisite is a real reason to leave one out, and \
+either of those must be named as an open, disclosed trade-off, not folded \
+into the explanation as if lightening the load were the point (found \
+live: a first-semester math requirement got quietly swapped out this way \
+with no real blocker at all).
 - Never include a course tagged DAY-BLOCKED in the shortlist. Deliver \
 clash-free, and in your explanation name what relaxing ONE specific day \
 would unlock (e.g. "freeing Monday would add X and Y and reach 18 \
@@ -614,12 +623,19 @@ def run_agent_turn_v2(
     previous_issues = set((known_context or {}).get("previous_issues") or [])
     previous_explanation = (known_context or {}).get("previous_explanation")
     proposed_retake = (known_context or {}).get("proposed_retake")
+    pending_forced_add = (known_context or {}).get("pending_forced_add")
 
     if state_override is not None:
         state = state_override
         tool_log.append({"name": "structured_intake", "args": {}, "result": state})
     else:
-        state, c = _extract_student_state(track, messages, known_state=known_state, proposed_retake=proposed_retake)
+        state, c = _extract_student_state(
+            track,
+            messages,
+            known_state=known_state,
+            proposed_retake=proposed_retake,
+            pending_forced_add=pending_forced_add,
+        )
         cost += c
         tool_log.append({"name": "extract_student_state", "args": {}, "result": state})
         if previous_plan and known_state:
@@ -654,6 +670,16 @@ def run_agent_turn_v2(
                 "args": {},
                 "result": {"course_number": state["approved_retake_course"]},
             }
+        )
+
+    # Same deterministic-confirmation pattern as approved_retake_course
+    # above: only ever trust "the student confirmed the override" when it
+    # matches a REAL proposal made last turn, never the model's own say-so.
+    state["forced_add_course"] = None
+    if pending_forced_add and state.get("confirmed_forced_add") == pending_forced_add.get("course_number"):
+        state["forced_add_course"] = pending_forced_add["course_number"]
+        tool_log.append(
+            {"name": "forced_add_confirmed", "args": {}, "result": {"course_number": state["forced_add_course"]}}
         )
 
     # Question turns ("is X hard?") get one grounded answer from the real
@@ -708,6 +734,7 @@ def run_agent_turn_v2(
                 # carry the incoming proposal forward unchanged rather than
                 # silently dropping it.
                 "proposed_retake": proposed_retake,
+                "pending_forced_add": pending_forced_add,
             },
         }
 
@@ -812,12 +839,26 @@ def run_agent_turn_v2(
     requested_adds = [c for c in state.get("requested_add_courses", []) if c in track.courses and c not in passed]
     requested_adds_locked = set(tools.prereq_unmet_in(track, requested_adds, passed, failed)) if requested_adds else set()
     requested_adds = [c for c in requested_adds if c not in requested_adds_locked]
-    if requested_adds or requested_adds_locked:
+    # Same reasoning as the locked split above, for a different kind of
+    # unforceable course: found live, add_enforced (below) had no guard at
+    # all against blindly shoving a course that isn't even offered this
+    # semester into the plan - unlike the retake-approval enforcement,
+    # which already refuses to force-include an unregisterable course.
+    # There's no section to register for either way, so this is split off
+    # here and never handed to add_enforced; the guaranteed explanation
+    # backstop further down handles telling the student plainly why.
+    requested_adds_unavailable = {c for c in requested_adds if not track.courses[c].get("offered_next_semester")}
+    requested_adds = [c for c in requested_adds if c not in requested_adds_unavailable]
+    if requested_adds or requested_adds_locked or requested_adds_unavailable:
         tool_log.append(
             {
                 "name": "requested_adds",
                 "args": {},
-                "result": {"course_numbers": requested_adds, "locked": sorted(requested_adds_locked)},
+                "result": {
+                    "course_numbers": requested_adds,
+                    "locked": sorted(requested_adds_locked),
+                    "unavailable": sorted(requested_adds_unavailable),
+                },
             }
         )
 
@@ -1881,6 +1922,84 @@ def run_agent_turn_v2(
                 )
                 tool_log.append({"name": "credit_floor_topup_enforced", "args": {}, "result": {"added": topped_up}})
 
+    # Guaranteed explanation for a requested-but-unavailable course - same
+    # "guarantee survives even if a later backstop replaces the model's own
+    # prose" pattern as the locked-course explanation further below. "Not
+    # offered this semester" is a real fact nothing can override - there's
+    # no section to register for, full stop, so this never gets a
+    # force-anyway offer the way a schedule/room trade-off does below.
+    for unavailable_course in sorted(requested_adds_unavailable):
+        if unavailable_course not in track.courses:
+            continue
+        unavailable_name = track.courses[unavailable_course]["name"]
+        if unavailable_name in final_explanation or unavailable_course in final_explanation:
+            continue
+        final_explanation += (
+            f" On {unavailable_name}: you asked to add it, but it isn't offered this semester at all - "
+            "there's no section to register for, so I can't include it no matter what. It'll need to "
+            "wait for a semester it's actually offered."
+        )
+
+    # Explicit-add negotiation: add_enforced (in-loop, above) already tries
+    # to honor a by-name "add X" request, but a course it force-added can
+    # still get stripped by a LATER hard backstop (overlap/live-offering)
+    # with a generic note that never acknowledges it was an explicit
+    # request - found live, a student asked to add a specific course FIVE
+    # TIMES across revision turns and it just kept silently vanishing with
+    # no explanation at all. Checked here against the truly final list,
+    # after every other backstop has had its say. A schedule collision or
+    # no room without dropping something else is a trade-off the STUDENT
+    # gets to decide on, not one Python or the model silently decides for
+    # them: named plainly, with a standing offer to force it in anyway that
+    # persists across exactly one turn boundary, same lifecycle as a
+    # proposed retake.
+    new_pending_forced_add = None
+    forced_add_course = state.get("forced_add_course")
+    # A plain "yes, add it anyway" confirmation reply doesn't re-name the
+    # course - extraction's requested_add_courses field only ever fires on
+    # a BY-NAME request, so a bare confirmation would otherwise never even
+    # reach this loop. The confirmed target is checked here regardless of
+    # whether it was also named again this turn.
+    adds_to_check = list(requested_adds)
+    if forced_add_course and forced_add_course not in adds_to_check and forced_add_course in track.courses:
+        adds_to_check.append(forced_add_course)
+    for c in adds_to_check:
+        if c in final_course_numbers or c not in track.courses:
+            continue
+        name = track.courses[c]["name"]
+        trial = final_course_numbers + [c]
+        trial_overlaps = tools.choose_sections(track, trial, excluded_weekdays)["overlaps"]
+        conflict_partner = next(
+            (
+                o["course_b"] if o["course_a"] == c else o["course_a"]
+                for o in trial_overlaps
+                if c in (o["course_a"], o["course_b"])
+            ),
+            None,
+        )
+        reason_text = (
+            f"its class times collide with {track.courses[conflict_partner]['name']} in every available "
+            "section combination"
+            if conflict_partner and conflict_partner in track.courses
+            else "fitting it in means pushing another course out of this plan"
+        )
+        if forced_add_course == c:
+            final_course_numbers = trial
+            last_verify_result = tools.verify_plan(
+                track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+            )
+            final_explanation += f" Added {name} as you confirmed, despite the trade-off: {reason_text}."
+            tool_log.append(
+                {"name": "forced_add_enforced", "args": {}, "result": {"course_number": c, "reason": reason_text}}
+            )
+        else:
+            final_explanation += (
+                f" On {name}: you asked to add it, but I couldn't - {reason_text}. Want me to add it "
+                "anyway despite that? Confirm and I will, no matter what."
+            )
+            if new_pending_forced_add is None:
+                new_pending_forced_add = {"course_number": c, "name": name, "reason": reason_text}
+
     # Deterministic backstop, not left to the model to remember: live
     # testing showed the model reliably filling in deliver_plan's
     # proposed_retake WITHOUT actually asking the matching question in the
@@ -2035,5 +2154,9 @@ def run_agent_turn_v2(
             # replaces (never stacks with) whatever was pending before -
             # see the plan's "resolved within one turn boundary" design.
             "proposed_retake": new_proposed_retake,
+            # Same single-slot, one-turn-boundary lifecycle as proposed_retake
+            # above - a forced-add offer made this turn (or None) that the
+            # next turn's extraction checks against the student's reply.
+            "pending_forced_add": new_pending_forced_add,
         },
     }
