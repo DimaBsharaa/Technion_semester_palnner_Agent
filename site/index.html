@@ -4,58 +4,72 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>APEX - Semester Planning Agent</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%231E7D52'/%3E%3Cpath d='M18 5.5 L29.5 10.5 L18 15.5 L6.5 10.5 Z' fill='%23fff'/%3E%3Cpath d='M29.5 11 V16' stroke='%23fff' stroke-width='1.9' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='29.5' cy='17.9' r='1.8' fill='%23fff'/%3E%3Cpath d='M8.5 30.5 C8.5 22.5 11.5 19.8 17.5 18.3' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-dasharray='0.1 4.8'/%3E%3Ccircle cx='8.5' cy='30.5' r='2.3' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 36 36'%3E%3Crect width='36' height='36' rx='9' fill='%231C5E43'/%3E%3Cpath d='M18 5.5 L29.5 10.5 L18 15.5 L6.5 10.5 Z' fill='%23F2EBDD'/%3E%3Cpath d='M29.5 11 V16' stroke='%23F2EBDD' stroke-width='1.9' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='29.5' cy='17.9' r='1.8' fill='%23F2EBDD'/%3E%3Cpath d='M8.5 30.5 C8.5 22.5 11.5 19.8 17.5 18.3' stroke='%23F2EBDD' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-dasharray='0.1 4.8'/%3E%3Ccircle cx='8.5' cy='30.5' r='2.3' fill='%23F2EBDD'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@1,500;1,600&family=Instrument+Sans:wght@500;600;700&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --paper: #F4EEE1; --paper2: #FBF7EE; --card: #FFFFFF; --edge: #E7DCC6;
-    --edge-soft: #EFE7D6; --ink: #232F45; --ink2: #3A465E;
-    --mut: #78705F; --blue: #1E7D52; --blue-deep: #14573A; --red: #D64545;
-    --grn: #2E9E5B; --yel: #FFD84D; --yelsoft: #FFF3C4;
+    /* Minimal-luxury light: warm beige/parchment ground, deep emerald +
+       muted brass accents, warm espresso ink (never cool grey/navy - every
+       neutral here is warmed a few degrees toward the paper). */
+    --paper: #F2EBDD; --paper2: #FAF6EC; --card: #FFFDF8; --edge: #E2D5BE;
+    --edge-soft: #EEE4D0; --ink: #2A2318; --ink2: #55483A;
+    --mut: #8C7F68; --blue: #1C5E43; --blue-deep: #123F2C; --red: #B8483C;
+    --grn: #1C5E43; --yel: #C79A52; --yelsoft: #F3E7CD;
     /* Interactive/semantic tokens (same visual as before in light mode;
        each gets a dark-mode counterpart below) */
-    --blue-ink: #14573A;          /* strong accent text */
-    --btn1: #1E7D52; --btn2: #14573A;   /* filled-button gradient ends */
-    --btnr: #D64545;              /* filled danger */
-    --yel-ink: #8a6d00;
-    --ok-bg: #DCF3E3;  --ok-ink: #1E7A45;
-    --warn-bg: #FFF3C4; --warn-ink: #8a6d00;
-    --bad-bg: #FDEDED; --bad-ink: #A32E2E; --bad-edge: #F3C6C6;
-    --glass: rgba(251,247,238,.75);
-    --code-bg: rgba(20,25,40,.05);
-    --accent-soft: rgba(30,125,82,.07);
-    --glow1: rgba(30,125,82,.06); --glow2: rgba(255,216,77,.10);
-    --dotc: rgba(35,47,69,.06);
-    --disp: 'Space Grotesk', system-ui, sans-serif;
+    --blue-ink: #123F2C;          /* strong accent text */
+    --btn1: #1C5E43; --btn2: #123F2C;   /* filled-button gradient ends */
+    --btnr: #B8483C;              /* filled danger */
+    --yel-ink: #7A5A1E;
+    --ok-bg: #E1EFE6;  --ok-ink: #1C5E43;
+    --warn-bg: #F3E7CD; --warn-ink: #7A5A1E;
+    --bad-bg: #F7E7E4; --bad-ink: #96382E; --bad-edge: #E8C7C0;
+    --glass: rgba(250,246,236,.75);
+    --code-bg: rgba(42,35,24,.05);
+    --accent-soft: rgba(28,94,67,.07);
+    --glow1: rgba(28,94,67,.06); --glow2: rgba(199,154,82,.10);
+    --dotc: rgba(42,35,24,.06);
+    /* Three roles, deliberately not one font doing everything: Instrument
+       Sans carries UI text/labels/badges (needs to stay crisp at 10-12px,
+       where a display serif goes muddy); Inter carries long-form body copy
+       (explanations, reviews) for maximum reading comfort; Fraunces
+       (headline-only, italic) and Instrument Serif (smaller accents) are
+       reserved for the few genuine editorial moments - the welcome hero
+       and handwritten-note-style touches - never small UI chrome. */
+    --disp: 'Instrument Sans', Inter, system-ui, sans-serif;
     --body: 'Inter', system-ui, sans-serif;
-    --hand: 'Caveat', cursive;
-    --shadow: 0 1px 2px rgba(35,47,69,.05), 0 6px 18px rgba(35,47,69,.07);
-    --shadow-lg: 0 4px 10px rgba(35,47,69,.08), 0 22px 48px rgba(35,47,69,.12);
-    --ring: 0 0 0 3px rgba(30,125,82,.18);
+    --hand: 'Instrument Serif', Georgia, serif;
+    --headline: 'Fraunces', Georgia, serif;
+    --shadow: 0 1px 3px rgba(42,35,24,.04), 0 10px 28px rgba(42,35,24,.06);
+    --shadow-lg: 0 6px 16px rgba(42,35,24,.06), 0 30px 60px rgba(42,35,24,.10);
+    --ring: 0 0 0 3px rgba(28,94,67,.16);
   }
-  /* Dark mode: same brand family (navy ink, brand blue, warm yellow),
-     toggled via the header moon button, saved to localStorage. */
+  /* Dark mode: deliberately NOT navy - warm espresso/walnut ground (same
+     warmed-neutral family as the beige light mode, so the two themes read
+     as one considered palette, not two different apps), soft jade +
+     brighter brass for legibility on dark. Toggled via the header moon
+     button, saved to localStorage. */
   html[data-theme="dark"] {
-    --paper: #161B28; --paper2: #1C2232; --card: #232B3D; --edge: #333E56;
-    --edge-soft: #2B3448; --ink: #E9EDF7; --ink2: #C3CBDD;
-    --mut: #939CB0; --blue: #7DD6A4; --blue-deep: #1E6B47; --red: #F07A6E;
-    --grn: #4CC17A; --yel: #C7A63C; --yelsoft: #35311F;
-    --blue-ink: #A4E3C2;
-    --btn1: #2B8F5F; --btn2: #1E6B47;
-    --btnr: #C0453C;
-    --yel-ink: #F0D77E;
-    --ok-bg: rgba(76,193,122,.14);  --ok-ink: #6FD695;
-    --warn-bg: rgba(232,197,88,.14); --warn-ink: #F0D77E;
-    --bad-bg: rgba(240,122,110,.12); --bad-ink: #F59A90; --bad-edge: rgba(240,122,110,.4);
-    --glass: rgba(22,27,40,.78);
-    --code-bg: rgba(255,255,255,.06);
-    --accent-soft: rgba(125,214,164,.1);
-    --glow1: rgba(60,170,115,.10); --glow2: rgba(232,197,88,.05);
-    --dotc: rgba(255,255,255,.045);
-    --shadow: 0 1px 2px rgba(0,0,0,.35), 0 6px 18px rgba(0,0,0,.3);
-    --shadow-lg: 0 4px 10px rgba(0,0,0,.4), 0 22px 48px rgba(0,0,0,.45);
-    --ring: 0 0 0 3px rgba(125,214,164,.28);
+    --paper: #1B1712; --paper2: #221D17; --card: #29231C; --edge: #3E3527;
+    --edge-soft: #332C22; --ink: #F0E6D2; --ink2: #D3C4A8;
+    --mut: #A3937A; --blue: #6FBE95; --blue-deep: #4A9670; --red: #DD8A7C;
+    --grn: #6FBE95; --yel: #DEB86C; --yelsoft: #3A2F1C;
+    --blue-ink: #8FD1AD;
+    --btn1: #4A9670; --btn2: #2E6B4C;
+    --btnr: #C56255;
+    --yel-ink: #F0D18E;
+    --ok-bg: rgba(111,190,149,.14);  --ok-ink: #8FD1AD;
+    --warn-bg: rgba(222,184,108,.14); --warn-ink: #F0D18E;
+    --bad-bg: rgba(221,138,124,.12); --bad-ink: #F0A99C; --bad-edge: rgba(221,138,124,.4);
+    --glass: rgba(27,23,18,.78);
+    --code-bg: rgba(255,255,255,.05);
+    --accent-soft: rgba(111,190,149,.1);
+    --glow1: rgba(111,190,149,.08); --glow2: rgba(222,184,108,.05);
+    --dotc: rgba(255,255,255,.04);
+    --shadow: 0 1px 3px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.3);
+    --shadow-lg: 0 6px 16px rgba(0,0,0,.4), 0 30px 60px rgba(0,0,0,.45);
+    --ring: 0 0 0 3px rgba(111,190,149,.25);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -65,7 +79,7 @@
   #log { scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
   #log::-webkit-scrollbar { width: 8px; }
   #log::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 999px; }
-  #log::-webkit-scrollbar-thumb:hover { background: #D9CCAF; }
+  #log::-webkit-scrollbar-thumb:hover { background: #D3C3A3; }
   #log::-webkit-scrollbar-track { background: transparent; }
   body {
     background-color: var(--paper);
@@ -102,7 +116,7 @@
   }
   header h1 { font-family: var(--disp); font-size: 1.12rem; font-weight: 700; letter-spacing: .04em; }
   header .track {
-    font-family: var(--hand); font-size: 1.25rem; color: var(--blue-ink);
+    font-family: var(--hand); font-style: italic; font-size: 1.3rem; color: var(--blue-ink);
     padding-left: 4px; line-height: 1;
   }
   header .budget {
@@ -134,7 +148,7 @@
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     text-align: center; gap: 10px; padding: 40px 24px; min-height: 320px;
   }
-  .desk-empty h2 { font-family: var(--disp); font-size: 1.05rem; color: var(--ink2); }
+  .desk-empty h2 { font-family: var(--headline); font-style: italic; font-weight: 500; font-size: 1.3rem; color: var(--ink2); letter-spacing: -.005em; }
   .desk-empty p { font-size: .82rem; color: var(--mut); max-width: 44ch; line-height: 1.5; }
   #deskPlan .plan-panel { align-self: auto; }
 
@@ -285,7 +299,8 @@
   .sched-chip .sched-time { direction: ltr; unicode-bidi: embed; }
   .course-review {
     font-family: var(--hand);
-    font-size: .9rem;
+    font-style: italic;
+    font-size: .95rem;
     color: var(--ink2);
     direction: rtl;
     text-align: right;
@@ -302,7 +317,7 @@
     border-radius: 10px;
     padding: 10px;
   }
-  .calendar-month-title { font-family: var(--hand); font-size: 1.1rem; color: var(--blue); margin-bottom: 6px; text-align: center; }
+  .calendar-month-title { font-family: var(--hand); font-style: italic; font-size: 1.2rem; color: var(--blue); margin-bottom: 6px; text-align: center; }
   .calendar-grid { display: grid; grid-template-columns: repeat(7, 34px); gap: 3px; }
   .calendar-daylabel { font-size: .62rem; color: var(--mut); text-align: center; font-weight: 600; }
   .calendar-cell {
@@ -356,7 +371,8 @@
     padding-top: 12px;
     border-top: 1px dashed var(--edge);
     font-family: var(--hand);
-    font-size: 1.15rem;
+    font-style: italic;
+    font-size: 1.25rem;
     color: var(--blue);
   }
 
@@ -472,7 +488,7 @@
     box-shadow: var(--shadow);
     padding: 22px 24px;
   }
-  .welcome h2 { font-family: var(--disp); font-size: 1.22rem; font-weight: 700; margin-bottom: 6px; letter-spacing: -.015em; }
+  .welcome h2 { font-family: var(--headline); font-style: italic; font-weight: 600; font-size: 1.7rem; margin-bottom: 6px; letter-spacing: -.005em; }
   .welcome p { color: var(--ink2); font-size: .92rem; line-height: 1.55; max-width: 60ch; }
   .welcome .steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
   .welcome .step {
@@ -618,7 +634,7 @@
     overflow-x: auto;
   }
   .timetable-title {
-    font-family: var(--hand); font-size: 1.15rem; color: var(--blue-ink);
+    font-family: var(--hand); font-style: italic; font-size: 1.25rem; color: var(--blue-ink);
     margin-bottom: 10px; text-align: center;
   }
   .tt-grid { display: flex; gap: 6px; min-width: 560px; }
@@ -672,13 +688,13 @@
   @media print {
     /* Print always uses the light palette, even when dark mode is on */
     html[data-theme="dark"] {
-      --paper: #F4EEE1; --paper2: #FBF7EE; --card: #FFFFFF; --edge: #E7DCC6;
-      --edge-soft: #EFE7D6; --ink: #232F45; --ink2: #3A465E; --mut: #78705F;
-      --blue: #1E7D52; --blue-ink: #14573A; --yel: #FFD84D; --yelsoft: #FFF3C4;
-      --yel-ink: #8a6d00; --red: #D64545; --grn: #2E9E5B;
-      --ok-bg: #DCF3E3; --ok-ink: #1E7A45; --warn-bg: #FFF3C4; --warn-ink: #8a6d00;
-      --bad-bg: #FDEDED; --bad-ink: #A32E2E; --bad-edge: #F3C6C6;
-      --btn1: #1E7D52; --btn2: #14573A; --btnr: #D64545;
+      --paper: #F2EBDD; --paper2: #FAF6EC; --card: #FFFDF8; --edge: #E2D5BE;
+      --edge-soft: #EEE4D0; --ink: #2A2318; --ink2: #55483A; --mut: #8C7F68;
+      --blue: #1C5E43; --blue-ink: #123F2C; --yel: #C79A52; --yelsoft: #F3E7CD;
+      --yel-ink: #7A5A1E; --red: #B8483C; --grn: #1C5E43;
+      --ok-bg: #E1EFE6; --ok-ink: #1C5E43; --warn-bg: #F3E7CD; --warn-ink: #7A5A1E;
+      --bad-bg: #F7E7E4; --bad-ink: #96382E; --bad-edge: #E8C7C0;
+      --btn1: #1C5E43; --btn2: #123F2C; --btnr: #B8483C;
     }
     header, #rail, #specRunner, .bg-scene, .quick-chips, .plan-feedback-prompt,
     .desk-empty { display: none !important; }
@@ -1073,36 +1089,36 @@ function downloadPlanImage(planResult) {
   const ctx = canvas.getContext('2d');
   ctx.scale(2, 2);
 
-  ctx.fillStyle = '#F4EEE1'; ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#1E7D52'; ctx.fillRect(0, 0, W, 84);
-  ctx.fillStyle = '#fff';
-  ctx.font = '700 26px "Space Grotesk", sans-serif';
+  ctx.fillStyle = '#F2EBDD'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#1C5E43'; ctx.fillRect(0, 0, W, 84);
+  ctx.fillStyle = '#F8F3E8';
+  ctx.font = 'italic 600 28px "Fraunces", Georgia, serif';
   ctx.textAlign = 'left';
-  ctx.fillText('Semester Plan', 24, 40);
+  ctx.fillText('Semester Plan', 24, 42);
   ctx.font = '400 15px Inter, sans-serif';
   ctx.fillText(document.getElementById('headerTrack').textContent, 24, 66);
 
   const v = planResult.verify || {};
-  ctx.fillStyle = '#232F45';
+  ctx.fillStyle = '#2A2318';
   ctx.font = '600 15px Inter, sans-serif';
   ctx.fillText(`${v.pass ? '✓ Verified' : '△ Needs review'} · ${v.total_credits ?? '—'} credits · workload ${v.workload_score ?? '—'}/100`, 24, 116);
 
   courses.forEach((c, i) => {
     const y = headerH + i * rowH;
-    ctx.fillStyle = i % 2 ? '#FBF7EE' : '#FFFFFF';
+    ctx.fillStyle = i % 2 ? '#FAF6EC' : '#FFFDF8';
     ctx.fillRect(16, y - 26, W - 32, rowH - 6);
-    ctx.fillStyle = '#232F45';
+    ctx.fillStyle = '#2A2318';
     ctx.font = '600 15px Inter, sans-serif';
     ctx.direction = 'rtl'; ctx.textAlign = 'right';
     ctx.fillText(c.name, W - 30, y);
     ctx.direction = 'ltr'; ctx.textAlign = 'left';
-    ctx.fillStyle = '#8B8272';
+    ctx.fillStyle = '#8C7F68';
     ctx.font = '400 13px Inter, sans-serif';
     const exam = (c.exams?.moed_a || [])[0];
     ctx.fillText(`${c.course_number} · ${c.points} pts${exam ? ' · exam ' + exam.date : ''}${c.is_retake ? ' · RETAKE' : ''}`, 30, y);
   });
 
-  ctx.fillStyle = '#8B8272';
+  ctx.fillStyle = '#8C7F68';
   ctx.font = 'italic 400 13px Inter, sans-serif';
   ctx.fillText('Built by my Semester Planning Agent 🤖', 24, H - 24);
 
@@ -1178,7 +1194,7 @@ function animateNumber(el, target, decimals, suffix) {
 // ===== Verified-plan confetti =====
 function celebrate() {
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const colors = ['#1E7D52', '#FFD84D', '#2E9E5B', '#D64545', '#14573A'];
+  const colors = ['#1C5E43', '#C79A52', '#123F2C', '#F2EBDD', '#8C7F68'];
   for (let i = 0; i < 44; i++) {
     const piece = document.createElement('div');
     piece.className = 'confetti';
@@ -1515,7 +1531,7 @@ function buildExamCalendar(courses) {
 }
 
 // ===== Weekly timetable =====
-const TT_COLORS = ['#4A6FA5', '#2E9E5B', '#B4741E', '#7C4DD8', '#D64545', '#1D8A96', '#946BDE', '#C2543B'];
+const TT_COLORS = ['#1C5E43', '#5470A6', '#B4741E', '#7D5BA6', '#A24E4E', '#1D8A96', '#C79A52', '#C2543B'];
 
 function slotsForTimetable(course) {
   if (course.timetable_slots && course.timetable_slots.length) return course.timetable_slots;
@@ -2349,13 +2365,13 @@ document.getElementById('transcriptFile').addEventListener('change', async (e) =
     } else {
       transcriptData = null;
       checklist.style.display = '';
-      note.style.color = '#c0392b';
+      note.style.color = '#96382E';
       note.textContent = data.error || "Couldn't read that PDF - fill in the checklist below instead.";
     }
   } catch (err) {
     transcriptData = null;
     checklist.style.display = '';
-    note.style.color = '#c0392b';
+    note.style.color = '#96382E';
     note.textContent = `Error uploading: ${err.message}`;
   }
 });
