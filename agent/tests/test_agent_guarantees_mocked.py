@@ -46,6 +46,13 @@ def base_state():
     )
 
 
+def semester1_state(**overrides):
+    intake = {"semester_number": 1, "excluded_weekdays": [], "pace": "normal",
+              "passed_courses": [], "failed_courses": []}
+    intake.update(overrides)
+    return build_state_from_intake(intake)
+
+
 def state_with_prereqs_for_strong():
     # STRONG/WEAK (below) include 00970249, which needs 00940224 + 00960570
     # as prerequisites - state this EXPLICITLY rather than relying on
@@ -888,6 +895,76 @@ try:
     check(
         "retake" in explanation.lower(),
         "a concrete next step (asking for a retake) is offered instead of a dead end",
+    )
+finally:
+    arl._call_with_tools = orig
+
+
+# --- Test 17: semester 1 defaults to exactly the required courses, nothing more ---
+# Explicit student directive: a brand-new student's first semester gets
+# ALL of the track's real semester-1 mandatory courses and nothing else by
+# default - no sport, no elective padding - unless she explicitly asks for
+# something. Real data check that made this safe to force unconditionally:
+# this track's semester-1 mandatory set is 5 courses / 22.0 credits on its
+# own, comfortably inside the normal floor/ceiling, so forcing completeness
+# never fights the credit range.
+print("--- semester 1 defaults to exactly the required courses, nothing more ---")
+
+S1_MANDATORY = sorted(c for c in track.mandatory_course_numbers if track.official_semester.get(c) == 1)
+S1_SPORT = "03940804"
+
+
+def script_deliver_partial_s1_with_sport(_messages):
+    # Only 3 of the 5 real requirements, plus an unrequested sport course.
+    partial = S1_MANDATORY[:3] + [S1_SPORT]
+    return msg([tool_call("deliver_plan", {"course_numbers": partial, "explanation": "here"})]), 0.0
+
+
+s1_state = semester1_state()
+arl._call_with_tools = script_deliver_partial_s1_with_sport
+try:
+    check(len(S1_MANDATORY) == 5, "fixture sanity: this track really has 5 semester-1 mandatory courses")
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "starting my first semester, plan it"}], 0.0, state_override=s1_state)
+    names = [t["name"] for t in res["tool_log"]]
+    delivered = sorted(c["course_number"] for c in res["plan_result"]["courses"])
+    check("semester1_completeness_enforced" in names, "the two missing real requirements are force-added")
+    check("semester1_extras_stripped" in names, "the unrequested sport course is stripped")
+    check(delivered == S1_MANDATORY, "the final plan is EXACTLY the 5 required courses, nothing more, nothing less")
+    check(S1_SPORT not in delivered, "the sport course specifically is gone")
+finally:
+    arl._call_with_tools = orig
+
+# Same stubborn delivery, but this time the student explicitly asked for a
+# specific elective - the extras-stripping half must back off (the
+# completeness-forcing half still applies), while completely different
+# explicit requests (a lighter pace) skip forcing completeness entirely.
+EXPLICIT_ELECTIVE = "00960226"  # a real elective in this track's catalog, unrelated to S1_MANDATORY
+
+s1_state_with_ask = semester1_state()
+s1_state_with_ask["requested_add_courses"] = [EXPLICIT_ELECTIVE]
+arl._call_with_tools = script_deliver_partial_s1_with_sport
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": f"starting my first semester, plan it, and please add {EXPLICIT_ELECTIVE}"}], 0.0, state_override=s1_state_with_ask)
+    delivered = [c["course_number"] for c in res["plan_result"]["courses"]]
+    check(
+        all(c in delivered for c in S1_MANDATORY),
+        "completeness still applies when the student explicitly asked for something extra",
+    )
+    check(
+        EXPLICIT_ELECTIVE in delivered,
+        "an explicitly requested course is never stripped by the extras rule",
+    )
+finally:
+    arl._call_with_tools = orig
+
+s1_state_light = semester1_state(override_minimums=True)
+arl._call_with_tools = script_deliver_partial_s1_with_sport
+try:
+    res = arl.run_agent_turn_v2(TRACK_ID, [{"role": "user", "content": "starting my first semester, keep it as light as possible please"}], 0.0, state_override=s1_state_light)
+    names = [t["name"] for t in res["tool_log"]]
+    check(
+        "semester1_completeness_enforced" not in names,
+        "an explicit lighter-load request is respected, not overridden by the completeness guarantee",
     )
 finally:
     arl._call_with_tools = orig

@@ -1132,9 +1132,25 @@ def run_agent_turn_v2(
                         (c for c in candidate if c not in track.mandatory_course_numbers and c not in requested_adds),
                         key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
                     )
+                    # BUG FIXED HERE: droppable.pop(0) was previously called
+                    # INSIDE the list-comprehension filter below, which
+                    # evaluates its condition once per element of candidate
+                    # - so it fired once per element of candidate, not once
+                    # per course being dropped. Any time candidate had more
+                    # items than droppable (the normal case - droppable
+                    # excludes every mandatory course, candidate doesn't),
+                    # this raised an unhandled IndexError and 500'd the
+                    # whole request the instant this hard-enforcement path
+                    # fired, which silently looked like "the agent just
+                    # ignored my add request" from the student's side.
+                    # Caught by a new permanent test, not live - fixed
+                    # before it could be confirmed as the cause of any
+                    # specific live report, but it is a real, serious,
+                    # previously-undiscovered crash in a heavily-used path.
                     for _ in missing_adds:
                         if droppable:
-                            candidate = [c for c in candidate if c != droppable.pop(0)]
+                            drop_c = droppable.pop(0)
+                            candidate = [c for c in candidate if c != drop_c]
                     candidate = candidate + [c for c in missing_adds if c not in candidate]
                     tool_log.append({"name": "add_enforced", "args": {}, "result": {"added": missing_adds}})
 
@@ -2085,6 +2101,72 @@ def run_agent_turn_v2(
             )
             if new_pending_forced_add is None:
                 new_pending_forced_add = {"course_number": c, "name": name, "reason": reason_text}
+
+    # HARD "semester 1 defaults to exactly the required courses" guarantee -
+    # explicit student directive: nothing but this track's real semester-1
+    # mandatory courses, no sport/elective padding, unless the student
+    # explicitly asked for something (a named add, or a pace that signals
+    # otherwise). Verified against real data before building this: all 3
+    # tracks' semester-1 mandatory sets already land at 19.5-22 credits on
+    # their own, comfortably within the normal floor/ceiling - this never
+    # needs filler to reach the credit floor either, so "exactly these,
+    # nothing else" is always achievable, not a trade-off against it.
+    # override_minimums / a "light" pace request means the opposite of this
+    # default (fewer courses than normal) and skips it entirely rather than
+    # fighting it; a "fast" pace or a named add is read as "I want more than
+    # the bare default" and only skips the extras-stripping half.
+    if semester_number == 1 and final_course_numbers:
+        pace = state["constraints"].get("pace")
+        wants_lighter = bool(state["constraints"].get("override_minimums")) or pace == "light"
+        semester1_mandatory = {
+            c for c in track.mandatory_course_numbers if track.official_semester.get(c) == 1
+        }
+        if not wants_lighter and semester1_mandatory:
+            missing_s1 = sorted(
+                c for c in semester1_mandatory
+                if c not in final_course_numbers
+                and c not in requested_removals
+                and track.courses.get(c, {}).get("offered_next_semester")
+            )
+            added_s1 = []
+            for c in missing_s1:
+                trial = final_course_numbers + [c]
+                if tools.choose_sections(track, trial, excluded_weekdays)["overlaps"]:
+                    continue  # a genuine, irreducible collision - disclosed via the normal issue path, not silently forced
+                final_course_numbers = trial
+                added_s1.append(c)
+            if added_s1:
+                last_verify_result = tools.verify_plan(
+                    track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+                )
+                added_names = ", ".join(track.courses[c]["name"] for c in added_s1)
+                final_explanation += (
+                    f" Note: added {added_names} - real first-semester requirements the plan was missing."
+                )
+                tool_log.append(
+                    {"name": "semester1_completeness_enforced", "args": {}, "result": {"added": added_s1}}
+                )
+
+            has_explicit_extra_ask = bool(requested_add_raw) or pace == "fast"
+            if not has_explicit_extra_ask:
+                retake_protected = (set(failed) | (state.get("confirmed_grade_retakes") or set())) | (
+                    {state.get("approved_retake_course")} if state.get("approved_retake_course") else set()
+                )
+                keep = semester1_mandatory | retake_protected
+                extras = [c for c in final_course_numbers if c not in keep]
+                if extras:
+                    final_course_numbers = [c for c in final_course_numbers if c not in extras]
+                    last_verify_result = tools.verify_plan(
+                        track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
+                    )
+                    removed_names = ", ".join(track.courses[c]["name"] for c in extras if c in track.courses)
+                    final_explanation += (
+                        f" Note: removed {removed_names} - your first semester defaults to exactly the "
+                        "required courses, nothing extra, unless you ask for something specific."
+                    )
+                    tool_log.append(
+                        {"name": "semester1_extras_stripped", "args": {}, "result": {"removed": extras}}
+                    )
 
     # Deterministic backstop, not left to the model to remember: live
     # testing showed the model reliably filling in deliver_plan's
