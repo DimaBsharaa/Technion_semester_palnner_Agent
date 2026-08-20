@@ -609,6 +609,34 @@ finally:
     script_deliver_without_removed_course.verified = False
 
 
+# --- Test 12: workload formula doesn't flag a normal mandatory-heavy semester ---
+# Found live: the OLD formula scored a completely ordinary, real
+# mandatory-heavy semester (5 real courses, 20 credits, avg CheeseFork
+# difficulty 3.86 - typical for Technion engineering core courses) at
+# 90.9, always over DEFAULT_WORKLOAD_CAP=80. That meant nearly every
+# legitimate mandatory-heavy semester tripped "workload exceeds cap" by
+# default, which pressured the model to drop courses to get under it - and
+# since dropping the HARDEST course cuts the score fastest, it kept
+# dropping mandatory courses specifically (the harder ones) instead of
+# light electives. Recalibrated around an empirically-measured difficulty
+# baseline (_DIFFICULTY_BASELINE) instead of scaling from 0.
+print("--- workload formula doesn't over-flag a normal mandatory-heavy semester ---")
+
+TYPICAL_MANDATORY_HEAVY = ["00940224", "00960210", "00940219", "00960275", "01040166"]  # 20 credits, avg diff ~4.0
+EXCESSIVE_STACK = ["00950296", "01040032", "01040031", "00940224", "00960210", "00940219"]  # 25.5 credits, avg diff ~4.2
+
+normal_score = _tools._workload_score(track, TYPICAL_MANDATORY_HEAVY)
+excessive_score = _tools._workload_score(track, EXCESSIVE_STACK)
+check(
+    normal_score <= _tools.DEFAULT_WORKLOAD_CAP,
+    f"a typical real mandatory-heavy semester ({normal_score}) stays under the cap ({_tools.DEFAULT_WORKLOAD_CAP})",
+)
+check(
+    excessive_score > _tools.DEFAULT_WORKLOAD_CAP,
+    f"a genuinely excessive stack ({excessive_score}) still correctly exceeds the cap",
+)
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")

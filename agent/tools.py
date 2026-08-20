@@ -412,10 +412,31 @@ def analyze_grade_improvement_candidates(track: Track, passed_courses: list[str]
     return out
 
 
+# The old difficulty_component scaled linearly from 0, treating "average
+# CheeseFork difficulty 0" as the baseline for "no workload contribution" -
+# but 0 never happens in practice. Found live: a real, ordinary
+# mandatory-heavy semester (5 real courses, 20 credits, avg difficulty
+# 3.86 - completely typical for Technion engineering core courses) scored
+# 90.9, ALWAYS over the DEFAULT_WORKLOAD_CAP=80 cap. That meant nearly
+# every legitimate mandatory-heavy semester tripped "workload exceeds cap"
+# by default, which pressured the model to drop courses to get under it -
+# and since dropping the HARDEST course reduces the score fastest, it kept
+# dropping mandatory courses (the harder ones) instead of light electives.
+# _DIFFICULTY_BASELINE (empirically measured: mean CheeseFork difficulty
+# across this catalog is ~2.44, mandatory-only courses average ~3.11) is
+# the new "zero contribution" point instead of 0 - an average difficulty
+# around the catalog's own typical range no longer eats most of the
+# budget, and only a GENUINELY heavy combination (multiple courses well
+# above typical) pushes the score toward the cap.
+_DIFFICULTY_BASELINE = 2.4
+_DIFFICULTY_CEILING = 5.0
+
+
 def _workload_score(track: Track, course_numbers: list[str]) -> float:
-    """0-100 heuristic: normalized credit load plus normalized difficulty.
-    Not a validated formula - a transparent, tunable stand-in so the critic
-    has something concrete to check against."""
+    """0-100 heuristic: normalized credit load plus normalized difficulty
+    ABOVE a realistic baseline (see _DIFFICULTY_BASELINE). Not a validated
+    formula - a transparent, tunable stand-in so the critic has something
+    concrete to check against."""
     total_points = sum(
         float(track.courses[c]["points"]) for c in course_numbers if track.courses[c]["points"]
     )
@@ -426,8 +447,10 @@ def _workload_score(track: Track, course_numbers: list[str]) -> float:
     ]
     avg_difficulty = sum(difficulties) / len(difficulties) if difficulties else 3.0
 
-    points_component = min(total_points / 20.0, 1.0) * 60  # 20 pts -> full 60
-    difficulty_component = min(avg_difficulty / 5.0, 1.0) * 40  # 5.0 -> full 40
+    points_component = min(total_points / DEFAULT_MAX_CREDITS, 1.0) * 60
+    difficulty_component = (
+        max(0.0, avg_difficulty - _DIFFICULTY_BASELINE) / (_DIFFICULTY_CEILING - _DIFFICULTY_BASELINE) * 40
+    )
     return round(points_component + difficulty_component, 1)
 
 

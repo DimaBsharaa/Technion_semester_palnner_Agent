@@ -40,6 +40,7 @@ plan).
 
 import json
 import os
+import random
 
 import live_offering_check
 import tools
@@ -135,6 +136,16 @@ def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: 
         rows.append(f"{num} — {c['name']} ({c['points']} pts, {load}{sat}, {exam}, {tag}){day_note}")
     if not rows:
         return "(none - every remaining course is either not offered next semester or has unmet prerequisites)"
+    # Shuffled, not sorted by course number - found live: the model kept
+    # defaulting to the same 1-2 electives (orchestra, one specific
+    # economics elective) across completely different students, and a
+    # fixed course-number order every single request is exactly the kind
+    # of positional bias that produces that (the same courses always
+    # appearing first). Every row is still explicitly tagged
+    # MANDATORY/MANDATORY-CHOICE/elective, so shuffling never costs the
+    # model its ability to tell what's actually required - only which
+    # electives it happens to see first changes, turn to turn.
+    random.shuffle(rows)
     return "\n".join(rows)
 
 
@@ -465,20 +476,34 @@ student's own constraints truly force. "Lazy" issues are NEVER acceptable \
 - low credits, too few mandatory courses, exam clashes, class-time \
 overlaps, or including a DAY-BLOCKED course - all of those are fixable by \
 substitution, so fix them before delivering.
-- If workload score exceeds the cap, fix it by SWAPPING one heavy elective \
+- If workload score exceeds the cap, fix it by SWAPPING one heavy ELECTIVE \
 for a lighter one - never by dropping courses outright until credits fall \
-below the target. A too-heavy week is a real, disclosable trade-off; a \
-too-light one (found live: adding one explicitly-requested hard course \
-triggered removing enough others to fall to 13 credits) is a worse outcome \
-than a somewhat heavy but real semester, and is never an acceptable way to \
-resolve a workload complaint. When a genuinely fewer-credits plan is the \
-right call, that's the student's decision (pace="light" or \
-override_minimums), not a silent one you make for them by over-trimming.
+below the target, and NEVER by dropping a mandatory course. A mandatory \
+course is never "the workload problem" to solve, no matter how heavy its \
+own difficulty rating is - a real degree requirement outranks a workload \
+number every time (found live: the agent kept dropping mandatory courses \
+specifically, because they're often the highest-difficulty ones in the \
+plan, which cuts the workload score fastest - that is exactly the wrong \
+trade to make). A too-heavy week from genuinely required courses is a \
+real, disclosable trade-off, not something to silently engineer away by \
+cutting a requirement. A too-light one (found live separately: adding one \
+explicitly-requested hard course triggered removing enough others to fall \
+to 13 credits) is a worse outcome than a somewhat heavy but real semester. \
+When a genuinely fewer-credits plan is the right call, that's the \
+student's decision (pace="light" or override_minimums), not a silent one \
+you make for them by over-trimming.
 - Never include a course tagged DAY-BLOCKED in the shortlist. Deliver \
 clash-free, and in your explanation name what relaxing ONE specific day \
 would unlock (e.g. "freeing Monday would add X and Y and reach 18 \
 credits") using the DAY-BLOCKED tags - the student decides, with the \
 whole picture, whether their day off is worth it.
+- If the plan includes an English-requirement course (name contains \
+"אנגלית"/"English"), name it explicitly in the explanation and say plainly \
+that it assumes the standard track placement - English level is decided \
+by Technion's own placement exam and varies per student (some have a \
+different level, some an exemption), which this system has no way to \
+verify. Never silently bury it among the other mandatory courses as if \
+it's a settled fact the same way a real degree requirement is.
 
 Your job is the judgment, not the bookkeeping: using the diagnostics above, \
 draft a candidate course list, then use your tools to check and refine it. \
