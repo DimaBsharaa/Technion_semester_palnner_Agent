@@ -6,8 +6,9 @@ Data Structures, can't come on Sundays") and the agent builds, verifies, and
 revises a personalized plan: courses, weekly timetable, exam calendar, risks —
 with honest trade-offs when something can't be satisfied.
 
-**Start here: read [`REPORT.pdf`](REPORT.pdf)** — the full team report: the story,
-the architecture diagram, the data, the tools, testing. **[`TESTING.md`](TESTING.md)**
+**Start here: read [`REPORT.pdf`](REPORT.pdf)** — the story,
+the architecture diagram, the data, the tools, testing. **[`BUILD_RECORD.pdf`](BUILD_RECORD.pdf)**
+logs what was built and fixed session by session. **[`TESTING.md`](TESTING.md)**
 has a leveled test plan with exact prompts to try.
 
 ## Setup (5 minutes)
@@ -15,8 +16,9 @@ has a leveled test plan with exact prompts to try.
 Requirements: Python 3.11+, `pip install fastapi uvicorn openai pdfplumber python-multipart`
 (the last two are for transcript-PDF upload — see `agent/requirements.txt`).
 
-1. **API key:** copy the template and paste the shared course (LLMod) key —
-   ask Manhal for it, it is deliberately not in the repo:
+1. **API key:** copy the template and paste in the group's shared LLMod.ai
+   key (see `agent/.env.example` for the exact base URL/model to pair with
+   it). Deliberately not committed to the repo:
 
    ```bash
    cp agent/.env.example agent/.env
