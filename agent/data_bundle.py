@@ -147,9 +147,24 @@ class Track:
         sits under a mandatory category and whose children are all course
         leaves is one choose-one-of group. Options are filtered to courses
         this track's bundle actually has (and never a confirmed
-        non-requirement - see _CONFIRMED_NON_REQUIREMENTS); groups fully
-        covered by the flat mandatory list are skipped (nothing new to
-        require)."""
+        non-requirement - see _CONFIRMED_NON_REQUIREMENTS).
+
+        A group is skipped entirely if ANY of its options is already a
+        confirmed flat-mandatory course (from official_semester, i.e. the
+        real digitized diagram) - not just when ALL of them are. Found
+        live: Technion's requirement tree is shared across tracks/faculties,
+        so it pairs each real, already-known-required course variant
+        (e.g. חשבון דיפרנציאלי ואינטגרלי 1מ2, the one this track's own
+        diagram actually requires) with a DIFFERENT track's variant of the
+        same subject (1מ', which isn't part of this curriculum at all) under
+        one shared "OR" node. Every single choice group across all 3 tracks
+        turned out to have exactly this shape: one real, one phantom - never
+        a genuine open choice once official_semester coverage exists. Left
+        as "pick one," the agent sometimes delivered the phantom option
+        instead of the real, already-known requirement, and otherwise
+        surfaced a fake dilemma as an unresolved open issue. This mechanism
+        still matters for whatever official_semester doesn't yet cover -
+        that's the case an actual unresolved choice would show up in."""
         excluded = _CONFIRMED_NON_REQUIREMENTS.get(self.otjid, set())
         groups: list[dict] = []
         seen: set[frozenset] = set()
@@ -166,7 +181,8 @@ class Track:
             ):
                 options = [c for c in _leaf_courses(node) if c in self.courses and c not in excluded]
                 key = frozenset(options)
-                if options and key not in seen and not key <= self.mandatory_course_numbers:
+                already_resolved = key & self.mandatory_course_numbers
+                if options and key not in seen and not already_resolved:
                     seen.add(key)
                     groups.append(
                         {
