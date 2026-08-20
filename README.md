@@ -38,7 +38,7 @@ Requirements: Python 3.11+, `pip install fastapi uvicorn openai pdfplumber pytho
 ## Tests
 
 ```bash
-bash agent/tests/run_mocked.sh          # 90+ checks, no API cost - run before any demo
+bash agent/tests/run_mocked.sh          # 115+ checks, no API cost - run before any demo
 python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after model/prompt changes
 ```
 

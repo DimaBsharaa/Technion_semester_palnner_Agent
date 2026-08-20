@@ -847,6 +847,52 @@ finally:
     arl._call_with_tools = orig
 
 
+# --- Test 16: a requested add that's already passed is explained, not silently dropped ---
+# Found live: a student asked to "add" a course by plain name (no "retake"
+# language) that she'd already passed. requested_add_courses correctly
+# excludes an already-passed course (it's not a new course to take), but
+# nothing downstream ever explained WHY - the request just vanished with
+# zero trace anywhere, exactly the "he's not replying in chat" complaint.
+print("--- requested add that's already passed is explained, not silently dropped ---")
+
+ALREADY_PASSED_TARGET = "00960570"  # in state_with_prereqs_for_strong()'s passed_courses
+
+
+def script_deliver_ignoring_already_passed_request(_messages):
+    return msg([tool_call("deliver_plan", {"course_numbers": ["03940804"], "explanation": "here you go"})]), 0.0
+
+
+already_passed_state = state_with_prereqs_for_strong()
+already_passed_state["requested_add_courses"] = [ALREADY_PASSED_TARGET]
+
+arl._call_with_tools = script_deliver_ignoring_already_passed_request
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": f"add {ALREADY_PASSED_TARGET} please"}], 0.0, state_override=already_passed_state
+    )
+    names = [t["name"] for t in res["tool_log"]]
+    explanation = res["plan_result"]["explanation"]
+    adds_entry = next((t for t in res["tool_log"] if t["name"] == "requested_adds"), None)
+    check(
+        adds_entry is not None and ALREADY_PASSED_TARGET in adds_entry["result"]["already_passed"],
+        "the already-passed request is recognized and logged, not silently discarded",
+    )
+    check(
+        ALREADY_PASSED_TARGET not in [c["course_number"] for c in res["plan_result"]["courses"]],
+        "an already-passed course is never added as if it were new",
+    )
+    check(
+        track.courses[ALREADY_PASSED_TARGET]["name"] in explanation and "already passed" in explanation,
+        "the reason is named in the explanation, not left silent",
+    )
+    check(
+        "retake" in explanation.lower(),
+        "a concrete next step (asking for a retake) is offered instead of a dead end",
+    )
+finally:
+    arl._call_with_tools = orig
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")

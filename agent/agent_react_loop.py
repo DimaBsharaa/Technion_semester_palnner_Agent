@@ -860,7 +860,20 @@ def run_agent_turn_v2(
     # Genuinely locked (unmet prerequisites) courses are excluded here -
     # those can't be forced in no matter what the student wants, but the
     # model is told to explain why, not just go silent.
-    requested_adds = [c for c in state.get("requested_add_courses", []) if c in track.courses and c not in passed]
+    requested_add_raw = [c for c in state.get("requested_add_courses", []) if c in track.courses]
+    # Found live: a student asked to "add" a course by plain name (no
+    # "retake"/"again"/"repeat" language) that she'd ALREADY passed - this
+    # fell into a real gap between the two mechanisms that exist for
+    # exactly this kind of course: requested_add_courses (for a NOT-yet-
+    # passed course) silently filtered it out right here since it's
+    # already passed, and requested_retake_course never fires without
+    # explicit retake language. The request just vanished, with nothing
+    # downstream ever seeing it to explain why - split off here instead so
+    # it gets the same guaranteed explanation treatment as a locked or
+    # unavailable course, with a concrete next step (say "retake it" and
+    # the existing self-requested-retake path takes over from there).
+    requested_adds_already_passed = {c for c in requested_add_raw if c in passed}
+    requested_adds = [c for c in requested_add_raw if c not in passed]
     requested_adds_locked = set(tools.prereq_unmet_in(track, requested_adds, passed, failed)) if requested_adds else set()
     requested_adds = [c for c in requested_adds if c not in requested_adds_locked]
     # Same reasoning as the locked split above, for a different kind of
@@ -873,7 +886,7 @@ def run_agent_turn_v2(
     # backstop further down handles telling the student plainly why.
     requested_adds_unavailable = {c for c in requested_adds if not track.courses[c].get("offered_next_semester")}
     requested_adds = [c for c in requested_adds if c not in requested_adds_unavailable]
-    if requested_adds or requested_adds_locked or requested_adds_unavailable:
+    if requested_adds or requested_adds_locked or requested_adds_unavailable or requested_adds_already_passed:
         tool_log.append(
             {
                 "name": "requested_adds",
@@ -882,6 +895,7 @@ def run_agent_turn_v2(
                     "course_numbers": requested_adds,
                     "locked": sorted(requested_adds_locked),
                     "unavailable": sorted(requested_adds_unavailable),
+                    "already_passed": sorted(requested_adds_already_passed),
                 },
             }
         )
@@ -1990,6 +2004,26 @@ def run_agent_turn_v2(
             f" On {unavailable_name}: you asked to add it, but it isn't offered this semester at all - "
             "there's no section to register for, so I can't include it no matter what. It'll need to "
             "wait for a semester it's actually offered."
+        )
+
+    # Guaranteed explanation for a requested add that's already passed -
+    # found live, this fell silently between requested_add_courses (which
+    # excludes it, correctly, since it's not a NEW course to take) and
+    # requested_retake_course (which never fires without explicit "retake"
+    # language) - the request just vanished with no trace anywhere. Gives
+    # a concrete next step instead of silence: confirming "yes, retake it"
+    # next turn routes through the existing self-requested-retake path.
+    for passed_add in sorted(requested_adds_already_passed):
+        if passed_add not in track.courses:
+            continue
+        passed_add_name = track.courses[passed_add]["name"]
+        if passed_add_name in final_explanation or passed_add in final_explanation:
+            continue
+        final_explanation += (
+            f" On {passed_add_name}: you asked to add it, but you've already passed it, so it's not a "
+            "new course to take - I left it out. If you meant you want to retake it, just say so and "
+            "I'll treat it as a retake next time; if that's not actually passed on your end, let me "
+            "know and I'll correct it."
         )
 
     # Explicit-add negotiation: add_enforced (in-loop, above) already tries
