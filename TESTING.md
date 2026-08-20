@@ -19,7 +19,7 @@ python3 -m http.server 4173 --directory site                        # frontend
 | # | Check | Expected |
 |---|---|---|
 | 0.1 | `curl http://127.0.0.1:8787/health` | `status: ok`, current version string, `agent_mode_default: "react"` |
-| 0.2 | `curl http://127.0.0.1:8787/tracks` | 2 tracks (Data & Info Eng, Info Systems Eng) |
+| 0.2 | `curl http://127.0.0.1:8787/tracks` | 3 tracks (Data & Info Eng, Info Systems Eng, Industrial Eng & Management) |
 | 0.3 | Open http://127.0.0.1:4173, hard-refresh | Page renders: header, drifting background glyphs, track cards. No console errors (F12). |
 | 0.4 | Click a track | Welcome hero + 3-step chips appear; composer shows with the **intake** placeholder ("Tell me about your semester…" — NOT "any changes or final remarks"). |
 | 0.5 | `bash agent/tests/run_mocked.sh` | Ends with "ALL MOCKED SUITES PASSED". |
@@ -79,6 +79,11 @@ Now the agent's actual intelligence, in realistic (but fair) situations.
 | 3.4 Corrected fact | Then: "Actually I also passed מבוא לסטטיסטיקה back in semester 3." | Fact absorbed (course never appears as takeable again); plan adjusts without re-asking everything. |
 | 3.5 Light pace | New session: "Semester 4, passed everything, light semester please, no failures." | Credits target 14–18, not 18–22; still a real course load, not 2 courses. |
 | 3.6 Minimal load | New session: "Semester 6, just give me the minimum, only what I absolutely must take." | `override_minimums` honored: small plan, no pushback war, honest framing. |
+| 3.7 Grade-improvement propose→accept | On a plan where the student mentioned a real grade in a passed course notably below its historical average (e.g. "...I got a 65 in Linear Algebra"): reply "yes" to the agent's follow-up question. | Explanation ends with a direct question the FIRST time (proposing); next plan includes that course tagged RETAKE only after the "yes". |
+| 3.8 Grade-improvement retake survives an unrelated later turn | Continuing 3.7: on a LATER turn, ask for something unrelated (e.g. "swap the art elective for something else"). | The grade-improvement retake is still in the plan, still tagged RETAKE - a completely unrelated revision must never silently drop it. |
+| 3.9 Explicit add - unavailable | "Please add תזמורת to my plan." (a course marked not offered) | Explained by name that it isn't offered this semester at all; never added, no "force it anyway" offer (there's nothing to force - no section exists). |
+| 3.10 Explicit add - negotiated | Ask to add a specific course that would collide with something already in the plan or need room. | The agent names the SPECIFIC blocker and asks whether to force it in anyway; confirming (even "yes, add it anyway" with no course name) includes it next turn with the trade-off disclosed as an open issue. |
+| 3.11 Back to previous plan | After at least one revision, click **⏪ Back to previous plan**. | The prior plan (not the current one) reappears in full; 📅/🖨/📤 all work on it; the next chat message revises from the restored plan, not the abandoned one. |
 
 **Gate: the agent behaves like an advisor, not a form-filler.**
 

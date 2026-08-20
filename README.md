@@ -59,6 +59,74 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
 | `pipeline/backfill_grade_stats.py` | One-off patch script that added `grade_stats` to the already-committed `data/track_*.json` bundles |
 | `data/track_*.json` | Packaged per-track course bundles the server loads |
 
+## Data sources
+
+Everything the agent reasons over is real, fetched ahead of time (never live
+during a request, except the one narrow offering check below):
+
+| Source | What it provides | Where |
+|---|---|---|
+| [Technion's own SAP/OData course API](https://students.technion.ac.il) | Course catalog, requirement trees, prerequisites, weekly schedule/sections, exam dates | `pipeline/technion_api.py` → `data/track_*.json` |
+| Official DDS ("track diagram") PDFs, hand-digitized per track | Ground-truth per-course semester placement, overriding the requirement tree wherever the tree is wrong or incomplete | `Track.official_semester` in `agent/data_bundle.py` — see the "Official semester placement" note below |
+| [CheeseFork](https://github.com/michael-maltsev/cheese-fork) | Crowd-sourced difficulty/satisfaction ratings + real review excerpts | `pipeline/cheesefork_client.py`, surfaced via `summarize_cheesefork` |
+| [technion-histograms](https://github.com/michael-maltsev/technion-histograms) | Real historical grade distributions (course average) | `pipeline/histogram_client.py` → `grade_stats`, used by grade-improvement retakes |
+| Technion's live system, one real-time check per delivery | Confirms the final candidate courses are still actually offered (the cached bundle is a snapshot) | `agent/live_offering_check.py` |
+
+A student's own transcript/grades are the one source that's never fetched —
+only ever what the student uploads (PDF) or states directly in chat; see
+"Transcript upload" below.
+
+## Grade-improvement retakes — how it actually behaves
+
+Three distinct paths, all requiring the student to be the one who decides —
+the agent never adds a retake on its own judgment alone:
+
+1. **Student asks outright** ("I want to retake Data Structures," a course
+   already passed) — included immediately, no negotiation needed.
+2. **Agent proposes, student approves** — if a grade is known (only ever
+   because the student volunteered it — never solicited) and it's notably
+   below the course's real historical average, the agent *may* propose a
+   retake via `deliver_plan`'s `proposed_retake` field and asks directly
+   whether to include it — the one deliberate exception to "never end with a
+   question." Only included if the student says yes on a *later* turn.
+3. **A failed course** isn't a "retake decision" at all — it's just mandatory
+   again, automatically.
+
+**Example (short):**
+```
+Student: "...I got a 65 in Linear Algebra."
+Agent:   [builds the plan] "...one more thing — your grade in Linear
+          Algebra (65) is well below both the course average and your own
+          average. Want me to add a retake next time?"
+Student: "yes"
+Agent:   [next plan includes Linear Algebra, tagged RETAKE]
+```
+
+**Persists correctly across the whole conversation, not just one turn** —
+found live and fixed: the exemption that lets an already-passed retake
+back into the plan used to reset every turn, so an accepted retake could
+get silently stripped out by a completely unrelated later revision
+(`check_invariants` treating it as "already passed"). `state["confirmed_grade_retakes"]`
+now persists it for the rest of the conversation, the same way
+passed/failed courses already do — see `agent_react_loop.py`.
+
+Never claims guaranteed eligibility under Technion's actual grade-improvement
+policy (שיפור ציון) — see `docs/enhancement-checklist.md` item 2.
+
+## Explicit "add this course" requests
+
+A by-name request to add a specific course is a hard directive, not a
+suggestion the model may weigh against difficulty or reviews — but it can
+genuinely fail two different ways, and the agent is required to say which:
+
+- **Not offered this semester at all** — explained plainly by name; there's
+  no section to register for, so this can never be forced in, no matter what.
+- **Genuinely collides with another course, or needs room** — the agent
+  names the specific conflict and asks whether to force it in anyway despite
+  the trade-off. Confirming (even a bare "yes, add it anyway" with no course
+  name) adds it next turn, with the resulting conflict disclosed as an open
+  issue rather than hidden.
+
 ## Notes
 
 - The per-turn spend cap lives in `agent/.env` (`SESSION_BUDGET_USD_CAP`).
@@ -88,21 +156,11 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
   grades survive, and those only ever live in memory for the request unless
   `student_key` is also set (in which case they're saved the same way any
   other resolved state is - see above).
-- **Grade-improvement retakes (agentic propose→approve, and student-initiated):**
-  when a student's own grade in a passed course is known and notably below
-  that course's historical average (`technion-histograms`), the agent may
-  PROPOSE a retake for grade improvement (`deliver_plan`'s `proposed_retake`
-  field) and ask directly whether to include it - the one deliberate
-  exception to "never end with a question." If the student agrees next turn
-  (or brings up the retake themselves, unprompted, in their own first
-  message - `requested_retake_course`), it's included and gets the same
-  RETAKE badge as a failed-course retake. This is hard-enforced, not just a
-  prompt suggestion: a one-shot nudge first, then code-level enforcement
-  across every delivery path (normal delivery, forced wrap-up, the final
-  safety swap) if the model still omits an approved retake - see
-  `agent_react_loop.py`'s `approved_retake_guaranteed`/`approved_retake_enforced`.
-  Never claims guaranteed eligibility under Technion's actual grade-improvement
-  policy - see `docs/enhancement-checklist.md` item 2.
+- **Grade-improvement retakes and explicit add requests:** see the two
+  dedicated sections above - both are hard-enforced in code across every
+  delivery path, not just prompted, and a student's own retake question
+  ("do you recommend retaking X?") is answered from their real known grade
+  and the course's real historical average, never a guess.
 - **Official semester placement (`track.official_semester`):** Technion's own
   requirement-tree API is neither complete (missing real mandatory courses
   the official DDS diagrams show) nor precise (also tags some courses
@@ -124,3 +182,23 @@ python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after
   is a snapshot, only refreshed when someone reruns the pipeline; this
   catches a course that changed in between. Fails open (never blocks
   delivery on a network hiccup) - see `agent/live_offering_check.py`.
+- **Requirement-tree "choice group" phantoms:** Technion's requirement tree
+  is shared across tracks/faculties, so it sometimes pairs a track's real,
+  already-known-required course variant (e.g. the Calculus a specific track
+  actually requires) with a DIFFERENT track's variant of the same subject
+  under one shared "pick one" node. A choice group is only ever surfaced to
+  the student when NEITHER option is already a confirmed real requirement -
+  see `_extract_mandatory_choice_groups` in `agent/data_bundle.py`.
+- **Session save/restore requires a Technion campus email**
+  (`@campus.technion.ac.il`) - client-side only, since the backend never
+  sees the raw address (only its SHA-256 hash - see the identity boundary
+  note above), so this is a courtesy check for honest students, not access
+  control.
+- **Back to previous plan:** once a plan has been revised at least once, a
+  button restores the prior version in full - same rendering path as any
+  other plan, so Print/Add to calendar/Share image all work on it exactly
+  as normal - and rewinds the conversation's memory so the next message
+  revises from the restored plan, not the abandoned one. Repeatable
+  (steps one plan further back each click), client-side only (`site/index.html`'s
+  `planHistory`), survives a page reload via the existing localStorage
+  session blob.

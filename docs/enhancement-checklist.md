@@ -8,28 +8,22 @@ decisions get made instead of deleting the history.
 
 ## 0. Testing setup (unblocks everything else)
 
-**Shipped 2026-08-17.** Running on a personal OpenAI key (`gpt-5.4-mini`,
-`OPENAI_BASE_URL` empty), verified live against the real API.
+**Shipped 2026-08-17 on a personal OpenAI key for free live testing during
+early development; switched back to the shared course LLMod proxy
+2026-08-20/21** (`OPENAI_API_KEY`/`OPENAI_BASE_URL=https://api.llmod.ai/v1`/
+`OPENAI_MODEL=MB5R2CF-azure/gpt-5.4-mini`, matching `agent/.env.example`'s
+primary/default block) for submission — both `agent/.env` (local) and the
+Vercel project's Environment Variables (production) updated and
+redeployed. Verified working on both: full live regression suite
+(`test_scenarios.py react` - 6/6, `test_agent_quality_live.py` - pass)
+against the LLMod endpoint, plus a fresh live call against the redeployed
+Vercel instance.
 
-- [x] **Switch to a personal API key for free live testing.** `agent/.env.example`
-  already documents this — it's a config swap, not new infra:
-  ```
-  OPENAI_API_KEY=sk-...your own key...
-  OPENAI_BASE_URL=            # leave EMPTY to use real OpenAI, not the course LLMod proxy
-  OPENAI_MODEL=<a real model name available on your account>
-  ```
-  Steps: create an account at platform.openai.com (or whichever provider), add a
-  payment method, **set a hard monthly spend limit in Billing settings** (this
-  is the real "credit card limit" control), create an API key, paste it into
-  `agent/.env`.
-  - [ ] Also update `OPENAI_PRICE_INPUT_PER_1M` / `OPENAI_PRICE_OUTPUT_PER_1M`
-    in `.env` to match the real model's actual published pricing — the
-    in-app cost badge reads these env vars directly (`agent_loop.py`), so
-    leaving the LLMod placeholder prices in place will show a wrong number
-    once the model changes.
-  - Open question: which model? The course used `gpt-5.4-mini` through the
-    LLMod proxy — confirm the equivalent name/tier available on a personal
-    account before assuming it's identical.
+- [x] Personal-key path used during development (see `agent/.env.example`'s
+  "Alternative" block if ever needed again for free iteration - same
+  config swap, no code change).
+- [x] Switched back to LLMod for submission - the graded deployment must
+  run on the course-provided key, not a personal one.
 
 ## 1. Transcript ingestion (highest value, no new infra)
 
@@ -96,6 +90,29 @@ threshold, that judgment moved entirely to the model) + `pipeline/histogram_clie
   `approved_retake_guaranteed`/`approved_retake_enforced` in
   `agent_react_loop.py`. Shows the same RETAKE badge as a failed-course
   retake (`is_retake`).
+- [x] **Fixed 2026-08-21: the exemption above only lasted ONE turn.**
+  `approved_retake_course` (the field the exemption above actually reads)
+  resets to `None` every turn by design - found live, via a real saved
+  conversation: a student accepted a retake proposal, then asked an
+  unrelated question two turns later, and the retake was silently stripped
+  out of the plan by `check_invariants` itself ("plan re-includes an
+  already-passed course") - not the model dropping it, Python actively
+  undoing an explicit student decision one turn later, every time. Added
+  `state["confirmed_grade_retakes"]`: every retake ever confirmed in the
+  conversation, persisted turn to turn exactly like passed/failed courses,
+  threaded through every place the single-turn exemption used to live
+  (`check_invariants`, `verify_plan`, the force-back-in guarantee, the
+  droppable-filler exclusions, the RETAKE badge). New permanent test
+  reproduces the exact shape: approve on turn 1, unrelated revision on
+  turn 2.
+- [x] **Fixed 2026-08-21: "do you recommend retaking X?" couldn't see the
+  student's own grade.** That question routes through `answer_course_question`
+  (built for "is X hard?" CheeseFork lookups), which never looked at
+  `state["grades"]` or `grade_stats` at all, even with both in scope -
+  found live, the agent truthfully but wrongly said "I can't see your
+  grade" right after a transcript upload had given it exactly that. Now
+  threads the student's own grade and both comparison baselines (course
+  average, their own average) into this path too.
 - Open question — the actual retake rule: **still genuinely open, intentionally
   not implemented.** Technion's real "שיפור ציון" (grade improvement) policy
   has specific eligibility constraints (which courses qualify, how many
@@ -269,6 +286,41 @@ course-spec-required `GET /`, `GET /api/team_info`, `GET /api/agent_info`,
   blind — removing a clause without testing risks reintroducing the exact
   bug it was written to prevent.
 
+## 9. Live-testing hardening pass, 2026-08-20/21
+
+A long round of live testing against the deployed app surfaced several real
+bugs, each root-caused via direct reproduction (never guessed) and covered
+by a new permanent mocked test:
+
+- [x] **Workload formula was the root cause of "the agent keeps removing
+  mandatory courses."** Difficulty scaled linearly from 0, so a completely
+  ordinary mandatory-heavy semester (real Technion difficulty ratings run
+  3.5-4.3) ate nearly the whole difficulty budget on its own - a normal
+  semester (5 real courses, 20 credits, avg difficulty 3.86) scored 90.9,
+  always over the 80 cap. Since dropping the HARDEST course cuts the score
+  fastest, the model kept dropping mandatory courses specifically.
+  Recalibrated around an empirically-measured baseline instead of scaling
+  from 0 - see `tools._workload_score`.
+- [x] **Requirement-tree "choice group" phantoms** - every single choice
+  group that existed across all 3 tracks turned out to have exactly one
+  real option and one phantom option from a different track's variant of
+  the same subject, never a genuine open choice once official diagram data
+  exists. Sometimes delivered the wrong (phantom) course entirely instead
+  of the real requirement. See `_extract_mandatory_choice_groups`.
+- [x] **Elective menu was effectively static** - both the model's own
+  elective menu AND a separate deterministic credit-floor top-up backstop
+  (which bypassed the menu entirely) picked the same course(s) every time
+  for a given scenario. Both now shuffle.
+- [x] **Explicit "add X" requests could silently vanish with zero
+  explanation** - reworked into a real negotiate-then-honor flow; see the
+  README's "Explicit add this course requests" section.
+- [x] **Session save/restore now requires `@campus.technion.ac.il`**
+  (client-side only, honor-system - see README).
+- [x] **"Back to previous plan" button** - full plan history, not just a
+  course-number diff; see README.
+- [x] Confirmed the deployed app is on the shared LLMod key (item 0) with a
+  fresh live regression pass after the switch.
+
 ## Suggested build order
 
 Actual build order ended up different from this original plan - items 1, 3,
@@ -276,13 +328,16 @@ and 2 shipped together (2026-08-18/19) because building memory first made
 transcript/grade data worth persisting, rather than each being useful only
 in isolation. Item 4's real-data pass and item 6's third track then shipped
 together (2026-08-19/20), prompted directly by the user uploading the
-official diagrams for all 3 tracks. Status as of 2026-08-20:
+official diagrams for all 3 tracks. A long live-testing hardening pass
+(item 9) closed out 2026-08-20/21. Status as of 2026-08-21:
 
-1. ~~Item 0 (personal API key)~~ — **done**.
+1. ~~Item 0 (API key)~~ — **done**; on the shared LLMod key for submission.
 2. ~~Item 1 (transcript ingestion)~~ — **done**; real-layout validation still open.
 3. ~~Item 3 (persistent memory)~~ — **done**, verified against real Supabase.
 4. ~~Item 2 (grade-improvement retakes)~~ — **done**, reworked into a real
-   propose→approve loop with hard cross-path enforcement.
+   propose→approve loop with hard cross-path enforcement, then hardened
+   again (item 9) so an accepted retake survives the whole conversation,
+   not just the turn it was approved on.
 5. Item 4 (data freshness) — **mostly done**: official per-course semester
    data digitized for all 3 tracks, real tree over/under-inclusion bugs
    found and fixed, a real fetch-pipeline retry bug fixed. A written runbook
@@ -293,4 +348,7 @@ official diagrams for all 3 tracks. Status as of 2026-08-20:
 8. Item 7 (API endpoints) — the required course-spec endpoints all exist
    and are deployed; the "what else might be wanted" open question is
    otherwise unresolved.
-9. Item 8 (system prompt) — no action planned, recommendation unchanged.
+9. ~~Item 9 (live-testing hardening pass)~~ — **done**: workload formula,
+   choice-group phantoms, elective variety, add-request negotiation, retake
+   persistence, session-email restriction, plan history/back button.
+10. Item 8 (system prompt) — no action planned, recommendation unchanged.
