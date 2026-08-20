@@ -1850,6 +1850,15 @@ def run_agent_turn_v2(
                     <= set(excluded_weekdays)
                 )
             ]
+            # Shuffle before the (stable) sort so ties on points break
+            # randomly instead of by catalog order - found live, this
+            # backstop bypasses the shuffle already applied to the model's
+            # own elective menu (_available_courses_text), so whenever it
+            # fired it silently added the exact same highest-point elective
+            # every single time regardless of that fix. Still prioritizes
+            # higher points first (fewer courses needed to close the gap),
+            # just no longer deterministic about which one among equals.
+            random.shuffle(candidates)
             candidates.sort(key=lambda c: float(track.courses[c].get("points") or 0), reverse=True)
             topped_up = []
             for c in candidates:
