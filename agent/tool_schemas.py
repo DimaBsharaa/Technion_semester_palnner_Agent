@@ -79,7 +79,7 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "summarize_cheesefork",
-            "description": "Crowd-sourced difficulty and satisfaction ratings for a set of candidate courses.",
+            "description": "Real review TEXT (not just the rating numbers, which the course menu already shows for every course) for courses you are seriously weighing right now. Call this on a SHORT list - the handful of courses you're actually deciding between - never the whole menu; each course returns full review excerpts, so a broad call wastes real tokens for courses that were never going to make the plan anyway.",
             "parameters": {
                 "type": "object",
                 "properties": {"course_numbers": {"type": "array", "items": {"type": "string"}}},

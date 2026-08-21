@@ -319,8 +319,19 @@ def _difficulty_bucket(avg_difficulty: float | None) -> str:
     return "heavy"
 
 
+# Found live: the model sometimes called this with the entire eligible-course
+# menu (~20 courses) instead of the few it was actually weighing - each course
+# returns full review text, so one such call added ~27,000 chars to the
+# conversation, more than the whole static system prompt. The tool description
+# now discourages this directly; this cap is the deterministic backstop in
+# case guidance alone isn't followed - real review text for a genuine
+# shortlist, never for the whole menu.
+SUMMARIZE_CHEESEFORK_MAX_COURSES = 8
+
+
 def summarize_cheesefork(track: Track, course_numbers: list[str]) -> dict:
     """CheeseFork crowd-review difficulty summary per course."""
+    course_numbers = course_numbers[:SUMMARIZE_CHEESEFORK_MAX_COURSES]
     result = {}
     for c in course_numbers:
         cf = _course_or_error(track, c)["cheesefork"]

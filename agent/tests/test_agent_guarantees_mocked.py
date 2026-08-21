@@ -1007,6 +1007,23 @@ finally:
     arl._call_with_tools = orig
 
 
+# --- Test: summarize_cheesefork never returns review text for more than
+# a genuine shortlist, no matter how many course numbers it's called with ---
+# Found live: a call with the entire eligible-course menu (~20 courses)
+# added ~27,000 chars of review text to one turn's conversation - more than
+# the whole static system prompt, for courses that were never candidates.
+print("--- summarize_cheesefork caps how many courses it returns review text for ---")
+import tools as _tools_check  # noqa: E402
+
+many_courses = sorted(track.courses.keys())[:15]
+check(len(many_courses) > _tools_check.SUMMARIZE_CHEESEFORK_MAX_COURSES, "fixture sanity: really asking for more than the cap")
+result = _tools_check.summarize_cheesefork(track, many_courses)
+check(
+    len(result) <= _tools_check.SUMMARIZE_CHEESEFORK_MAX_COURSES,
+    f"never returns data for more than {_tools_check.SUMMARIZE_CHEESEFORK_MAX_COURSES} courses in one call",
+)
+
+
 print()
 if failures:
     print(f"{len(failures)} failure(s)")
