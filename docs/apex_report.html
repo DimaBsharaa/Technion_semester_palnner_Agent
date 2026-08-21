@@ -154,6 +154,14 @@
     A small policy RAG tool could be added later for academic regulations or administrative documents. It was not added to this version because it would not improve the core scheduling and verification task.
   </p>
 
+  <h2>Prompt Size and Call Efficiency</h2>
+  <p>
+    The planning system prompt is long because it embeds the full eligible-course list (difficulty, satisfaction, exam date, mandatory status) for the semester, not because of unrelated padding. Every field in that list is read by name by a specific planning rule - for example, exam dates are compared across candidates to avoid scheduling two exams close together, and difficulty and satisfaction ratings are compared when choosing between electives. Fetching this data per course through tool calls instead would not reduce it: the same data would move into tool-result history and still be resent on later turns, while adding more model calls per plan - working against "avoid unnecessary LLM calls," not toward it.
+  </p>
+  <p>
+    Prompt size was not independently trimmed for cost because it is not the cost driver here. Input tokens are priced well below output tokens ($0.25 vs $2.00 per million), and this was measured, not assumed. Output length and step count - not prompt length - are what actually determine the cost of a planning turn.
+  </p>
+
   <h2>Required Endpoints</h2>
   <table>
     <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>

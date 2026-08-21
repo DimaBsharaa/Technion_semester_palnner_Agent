@@ -162,6 +162,11 @@
     If the project grows, the best RAG addition would be a small policy search tool for academic regulations. That is separate from the planning core.
   </p>
 
+  <h2>Why the Planning Prompt Is Long</h2>
+  <p>
+    The planner's system prompt embeds the full list of courses the student can still take, with difficulty, satisfaction, and exam date for each - because several planning rules (avoiding clustered exams, balancing workload, picking a well-reviewed elective) need to compare that data across candidates at once, not one course at a time. Fetching it per course instead would not shrink it: the same data would just move into tool-result history and add more model calls per plan. Input tokens are also priced well below output tokens, and measurement (not assumption) showed output length and step count drive cost here, not prompt size - so prompt size was left as-is rather than trimmed for its own sake.
+  </p>
+
   <h2>Final State</h2>
   <p>
     The project is an agent backed by a data pipeline. The pipeline prepares the knowledge. The runtime agent chooses tools, checks evidence, builds plans, repairs failures, and explains the result to the student.
