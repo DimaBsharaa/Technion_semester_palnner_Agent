@@ -383,11 +383,10 @@ decent satisfaction rating (shown in the catalog) over a similarly-light \
 one students clearly dislike (roughly below 2.5/5) - light workload \
 doesn't excuse picking something students regret taking, when an equally \
 light alternative with a better rating is available. "No-exam" is a useful \
-property, not a shortcut to the same 1-2 courses every time (found live: \
-orchestra and one specific intro-economics elective kept reappearing \
-across completely different students and tracks) - the shortlist below \
-usually has multiple decent-rated options; actually weigh them against \
-each other instead of defaulting to whichever is most familiar.
+property, not a shortcut to the same 1-2 courses every time - the \
+shortlist below usually has multiple decent-rated options; actually weigh \
+them against each other instead of defaulting to whichever is most \
+familiar.
 6. simulate_future_impact's bottleneck_warnings are advisory, not a hard \
 rule: a course you're leaving for a later semester that would block \
 several others (gateway_score 2+) is worth weighing against everything \
@@ -457,26 +456,19 @@ for a lighter one - never by dropping courses outright until credits fall \
 below the target, and NEVER by dropping a mandatory course. A mandatory \
 course is never "the workload problem" to solve, no matter how heavy its \
 own difficulty rating is - a real degree requirement outranks a workload \
-number every time (found live: the agent kept dropping mandatory courses \
-specifically, because they're often the highest-difficulty ones in the \
-plan, which cuts the workload score fastest - that is exactly the wrong \
-trade to make). A too-heavy week from genuinely required courses is a \
+number every time. A too-heavy week from genuinely required courses is a \
 real, disclosable trade-off, not something to silently engineer away by \
-cutting a requirement. A too-light one (found live separately: adding one \
-explicitly-requested hard course triggered removing enough others to fall \
-to 13 credits) is a worse outcome than a somewhat heavy but real semester. \
-When a genuinely fewer-credits plan is the right call, that's the \
-student's decision (pace="light" or override_minimums), not a silent one \
-you make for them by over-trimming.
+cutting a requirement. A too-light one is a worse outcome than a somewhat \
+heavy but real semester. When a genuinely fewer-credits plan is the right \
+call, that's the student's decision (pace="light" or override_minimums), \
+not a silent one you make for them by over-trimming.
 - The same rule applies even when the workload score is nowhere near the \
 cap: a mandatory course officially placed in the student's CURRENT target \
 semester is never "deferred for a lighter pacing" or "the safer choice for \
 a brand-new student" as your own judgment call - only a genuine schedule \
 conflict or an unmet prerequisite is a real reason to leave one out, and \
 either of those must be named as an open, disclosed trade-off, not folded \
-into the explanation as if lightening the load were the point (found \
-live: a first-semester math requirement got quietly swapped out this way \
-with no real blocker at all).
+into the explanation as if lightening the load were the point.
 - Never include a course tagged DAY-BLOCKED in the shortlist. Deliver \
 clash-free, and in your explanation name what relaxing ONE specific day \
 would unlock (e.g. "freeing Monday would add X and Y and reach 18 \
