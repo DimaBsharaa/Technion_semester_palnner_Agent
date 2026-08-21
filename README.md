@@ -1,206 +1,173 @@
-# Semester Planning Agent
+# APEX — Semester Planning Agent
 
-An AI agent that plans a Technion semester like an experienced academic advisor.
-A student describes their situation in free text ("starting semester 5, failed
-Data Structures, can't come on Sundays") and the agent builds, verifies, and
-revises a personalized plan: courses, weekly timetable, exam calendar, risks —
-with honest trade-offs when something can't be satisfied.
+**Live demo: [technion-semester-palnner-agent.vercel.app](https://technion-semester-palnner-agent.vercel.app)**
 
-**Start here: read [`REPORT.pdf`](REPORT.pdf)** — the story,
-the architecture diagram, the data, the tools, testing. **[`BUILD_RECORD.pdf`](BUILD_RECORD.pdf)**
-logs what was built and fixed session by session. **[`TESTING.md`](TESTING.md)**
-has a leveled test plan with exact prompts to try.
+An AI agent that plans a university semester the way a good academic advisor
+would — not a form that fills in a template, but a model that reasons its way
+there. It calls real tools to check prerequisites, build a clash-free weekly
+timetable, price out exam-period risk, and weigh trade-offs, then explains
+*why* every course is in the plan. Point it at a messy, human description of
+a situation and it comes back with something a person would actually approve.
 
-## Setup (5 minutes)
+```
+"Starting semester 5. Failed Data Structures. Can't come in on Sundays."
+```
 
-Requirements: Python 3.11+, `pip install fastapi uvicorn openai pdfplumber python-multipart`
-(the last two are for transcript-PDF upload — see `agent/requirements.txt`).
+...and it returns a verified plan: the failed course retaken first, a
+clash-free timetable around the Sunday restriction, exam dates spaced out
+where possible, and a plain-English explanation of every trade-off it had to
+make — never silently hiding a problem it couldn't solve.
 
-1. **API key:** copy the template and paste in the group's shared LLMod.ai
-   key (see `agent/.env.example` for the exact base URL/model to pair with
-   it). Deliberately not committed to the repo:
+## Why this exists
 
-   ```bash
-   cp agent/.env.example agent/.env
-   # edit agent/.env and fill OPENAI_API_KEY
-   ```
+Academic advising doesn't scale — a human advisor gives every student
+individual attention, but there are far more students than advising hours.
+Most "smart" schedule builders are really just constraint solvers wearing a
+chat interface: they optimize a spreadsheet, they don't *advise*. APEX is
+built the other way around — an LLM in the driver's seat, deciding which of
+15 real tools to call and in what order, with deterministic code holding the
+hard guarantees (no schedule collisions, no re-including a passed course, no
+unmet prerequisite) so the model's judgment gets to focus on the parts that
+actually need it: priority, trade-offs, and honest communication.
 
-   `agent/.env` is gitignored — real keys never get committed.
+**What it can do:**
+- Build a full semester plan from free text (Hebrew or English) — courses,
+  a clash-free weekly timetable, an exam calendar (moed A + B), a workload
+  score, and a roadmap to graduation
+- Prioritize retaking a failed course, and separately, *propose* — never
+  silently add — a grade-improvement retake when a student's own grade is
+  well below the course average, asking directly before ever including it
+- Respect hard constraints (days off, lighter pace) down to the section level
+- Revise an existing plan minimally on follow-up ("swap the Tuesday course,"
+  "I have a wedding on that exam date") instead of starting over
+- Answer grounded questions about a specific course from real student
+  reviews, without derailing into a full replan
+- Say plainly when something can't be satisfied, instead of hiding it
 
-2. **Run** (two terminals):
+**What it deliberately never does:** register a student for anything, touch
+a real Technion account, or deliver a plan with a schedule collision, an
+unmet prerequisite, or a course already passed.
 
-   ```bash
-   uvicorn main:app --port 8787 --app-dir agent        # backend
-   python3 -m http.server 4173 --directory site         # frontend
-   ```
+## Try it
 
-3. Open **http://127.0.0.1:4173**, pick a track, and describe your semester.
-   Sanity check: `curl http://127.0.0.1:8787/health`.
+Open the [live demo](https://technion-semester-palnner-agent.vercel.app),
+pick a track, and describe your semester in your own words — or paste the
+example above. No login, no setup.
+
+## Run it locally
+
+**Requirements:** Python 3.11+
+
+```bash
+pip install fastapi uvicorn openai pdfplumber python-multipart
+```
+
+**1. API key** — copy the template and fill in a key (LLMod proxy or a real
+OpenAI key both work — see `agent/.env.example` for both options):
+
+```bash
+cp agent/.env.example agent/.env
+# edit agent/.env and fill OPENAI_API_KEY
+```
+
+`agent/.env` is gitignored — a real key never gets committed.
+
+**2. Run** (two terminals):
+
+```bash
+uvicorn main:app --port 8787 --app-dir agent        # backend
+python3 -m http.server 4173 --directory site        # frontend
+```
+
+**3.** Open **http://127.0.0.1:4173**, pick a track, and describe your
+semester. Sanity check the backend directly: `curl http://127.0.0.1:8787/health`.
 
 ## Tests
 
 ```bash
-bash agent/tests/run_mocked.sh          # 115+ checks, no API cost - run before any demo
-python3 agent/tests/test_scenarios.py react   # live suite (~$0.20) - only after model/prompt changes
+bash agent/tests/run_mocked.sh                # deterministic, zero API cost - run before any demo
+python3 agent/tests/test_scenarios.py react    # live scenario suite (~$0.20) - after model/prompt changes
 ```
 
-## Repo map
+The mocked suite drives the real agent loop against scripted model
+responses, so every guarantee below (schedule integrity, retake handling,
+revision continuity) is regression-tested without spending anything.
+[`TESTING.md`](TESTING.md) has a leveled test plan with exact prompts to try
+against the live app.
 
-| Path | What it is |
-|---|---|
-| `agent/agent_react_loop.py` | **The agent** — the bounded tool-choosing loop and its guards |
-| `agent/tools.py` | 15 model-callable tools (pure Python, no AI inside) - incl. the weekly-schedule and exam-study analyzers, plus `analyze_grade_improvement_candidates` (preinjected, not model-callable - see `docs/enhancement-checklist.md` item 2) |
-| `agent/agent_loop.py` | Understanding/extraction + shared helpers + legacy pipeline (fallback) |
-| `agent/student_store.py` | Supabase-backed session persistence, keyed by hashed student email (item 3) |
-| `agent/transcript_parser.py` | Parses an uploaded Technion transcript PDF into courses/grades (item 1) |
-| `agent/live_offering_check.py` | Real-time "is this course still offered" check on the final candidates, right before delivery |
-| `agent/main.py` | Web server — see its own docstring for the full endpoint list: `/chat`, `/chat/stream`, `/transcript`, `/session`, `/tracks`, `/health`, plus the course-spec-required `/api/*` endpoints |
-| `agent/tests/` | Automated checks + live scenario suite |
-| `site/index.html` | The whole website — one file, no build step |
-| `pipeline/` | Offline data fetching (Technion SAP API + CheeseFork + technion-histograms) |
-| `pipeline/backfill_grade_stats.py` | One-off patch script that added `grade_stats` to the already-committed `data/track_*.json` bundles |
-| `data/track_*.json` | Packaged per-track course bundles the server loads |
+## How it works
+
+The model runs inside a bounded ReAct-style loop, choosing among 15 tools —
+catalog lookup, prerequisite graph, schedule builder, exam-date fetcher,
+workload/risk analyzers, review lookup — and ends the turn by calling
+`deliver_plan`. Nothing it delivers reaches the student unchecked: Python
+re-verifies the final plan against every hard invariant regardless of what
+the model claims, and repairs or explains any violation before it ever goes
+out. See [`REPORT.pdf`](REPORT.pdf) for the full architecture write-up and
+diagram, and [`BUILD_RECORD.pdf`](BUILD_RECORD.pdf) for a session-by-session
+log of what got built and fixed along the way.
 
 ## Data sources
 
 Everything the agent reasons over is real, fetched ahead of time (never live
-during a request, except the one narrow offering check below):
+mid-request, except the one narrow check below):
 
 | Source | What it provides | Where |
 |---|---|---|
-| [Technion's own SAP/OData course API](https://students.technion.ac.il) | Course catalog, requirement trees, prerequisites, weekly schedule/sections, exam dates | `pipeline/technion_api.py` → `data/track_*.json` |
-| Official DDS ("track diagram") PDFs, hand-digitized per track | Ground-truth per-course semester placement, overriding the requirement tree wherever the tree is wrong or incomplete | `Track.official_semester` in `agent/data_bundle.py` — see the "Official semester placement" note below |
-| [CheeseFork](https://github.com/michael-maltsev/cheese-fork) | Crowd-sourced difficulty/satisfaction ratings + real review excerpts | `pipeline/cheesefork_client.py`, surfaced via `summarize_cheesefork` |
-| [technion-histograms](https://github.com/michael-maltsev/technion-histograms) | Real historical grade distributions (course average) | `pipeline/histogram_client.py` → `grade_stats`, used by grade-improvement retakes |
-| Technion's live system, one real-time check per delivery | Confirms the final candidate courses are still actually offered (the cached bundle is a snapshot) | `agent/live_offering_check.py` |
+| [Technion's own course API](https://students.technion.ac.il) | Course catalog, requirement trees, prerequisites, weekly schedule/sections, exam dates | `pipeline/technion_api.py` → `data/track_*.json` |
+| Official per-track requirement diagrams, hand-digitized | Ground-truth per-course semester placement, overriding the requirement tree wherever it's wrong or incomplete | `Track.official_semester` in `agent/data_bundle.py` |
+| [CheeseFork](https://github.com/michael-maltsev/cheese-fork) | Crowd-sourced difficulty/satisfaction ratings and real review excerpts | `pipeline/cheesefork_client.py` |
+| [technion-histograms](https://github.com/michael-maltsev/technion-histograms) | Real historical grade distributions | `pipeline/histogram_client.py` → used by grade-improvement retakes |
+| Technion's live system, one check per delivery | Confirms the final candidate courses are still actually offered (the cached bundle is a snapshot) | `agent/live_offering_check.py` |
 
-A student's own transcript/grades are the one source that's never fetched —
-only ever what the student uploads (PDF) or states directly in chat; see
-"Transcript upload" below.
+A student's own transcript/grades are the one thing never fetched — only
+ever what the student uploads (PDF) or states directly in chat.
 
-## Grade-improvement retakes — how it actually behaves
+## Project structure
 
-Three distinct paths, all requiring the student to be the one who decides —
-the agent never adds a retake on its own judgment alone:
+| Path | What it is |
+|---|---|
+| `agent/agent_react_loop.py` | **The agent** — the bounded tool-choosing loop and its guards |
+| `agent/tools.py` | 15 model-callable tools (pure Python, no AI inside) |
+| `agent/agent_loop.py` | Free-text understanding/extraction, shared helpers |
+| `agent/student_store.py` | Optional session persistence, keyed by a hashed student email |
+| `agent/transcript_parser.py` | Parses an uploaded transcript PDF into courses/grades |
+| `agent/live_offering_check.py` | Real-time "is this course still offered" check before delivery |
+| `agent/main.py` | Web server — REST endpoints for the frontend and for programmatic use |
+| `agent/tests/` | Automated checks + live scenario suite |
+| `site/index.html` | The whole frontend — one file, no build step |
+| `pipeline/` | Offline data fetching (course API + CheeseFork + grade histograms) |
+| `data/track_*.json` | Packaged per-track course bundles the server loads |
 
-1. **Student asks outright** ("I want to retake Data Structures," a course
-   already passed) — included immediately, no negotiation needed.
-2. **Agent proposes, student approves** — if a grade is known (only ever
-   because the student volunteered it — never solicited) and it's notably
-   below the course's real historical average, the agent *may* propose a
-   retake via `deliver_plan`'s `proposed_retake` field and asks directly
-   whether to include it — the one deliberate exception to "never end with a
-   question." Only included if the student says yes on a *later* turn.
-3. **A failed course** isn't a "retake decision" at all — it's just mandatory
-   again, automatically.
+## A few engineering details worth knowing about
 
-**Example (short):**
-```
-Student: "...I got a 65 in Linear Algebra."
-Agent:   [builds the plan] "...one more thing — your grade in Linear
-          Algebra (65) is well below both the course average and your own
-          average. Want me to add a retake next time?"
-Student: "yes"
-Agent:   [next plan includes Linear Algebra, tagged RETAKE]
-```
+**Grade-improvement retakes are a proposal, never a silent add.** If a
+student volunteers a grade (never solicited) and it's notably below both the
+course average and their own average, the agent *may* propose a retake and
+ask directly whether to include it — the one deliberate exception to "never
+end with a question." Only added if the student says yes on a later turn,
+and that acceptance persists for the rest of the conversation, not just one
+turn.
 
-**Persists correctly across the whole conversation, not just one turn** —
-found live and fixed: the exemption that lets an already-passed retake
-back into the plan used to reset every turn, so an accepted retake could
-get silently stripped out by a completely unrelated later revision
-(`check_invariants` treating it as "already passed"). `state["confirmed_grade_retakes"]`
-now persists it for the rest of the conversation, the same way
-passed/failed courses already do — see `agent_react_loop.py`.
+**An explicit "add this course" is a hard directive**, not a suggestion the
+model can weigh against difficulty — but it can genuinely fail two ways, and
+the agent has to say which: not offered at all (can never be forced), or a
+real schedule collision (negotiated — the agent names the conflict and asks
+before forcing it in).
 
-Never claims guaranteed eligibility under Technion's actual grade-improvement
-policy (שיפור ציון) — see `docs/enhancement-checklist.md` item 2.
+**A plan is re-verified after delivery, not just before.** The model's own
+explanation is written before certain deterministic corrections run; if
+Python changes what's actually being delivered, the explanation is
+regenerated from the corrected plan's real state rather than left describing
+something that no longer matches.
 
-## Explicit "add this course" requests
+**Official per-course semester placement is hand-corrected**, because
+Technion's own requirement-tree API is neither complete nor precise on its
+own — some real mandatory courses are missing from it, others are tagged
+mandatory that shouldn't be. Real per-course placement, digitized from each
+track's official diagram, overrides the heuristic wherever it's known.
 
-A by-name request to add a specific course is a hard directive, not a
-suggestion the model may weigh against difficulty or reviews — but it can
-genuinely fail two different ways, and the agent is required to say which:
-
-- **Not offered this semester at all** — explained plainly by name; there's
-  no section to register for, so this can never be forced in, no matter what.
-- **Genuinely collides with another course, or needs room** — the agent
-  names the specific conflict and asks whether to force it in anyway despite
-  the trade-off. Confirming (even a bare "yes, add it anyway" with no course
-  name) adds it next turn, with the resulting conflict disclosed as an open
-  issue rather than hidden.
-
-## Notes
-
-- The per-turn spend cap lives in `agent/.env` (`SESSION_BUDGET_USD_CAP`).
-- Never commit `agent/.env`. If a key ever leaks into a commit, rotate it immediately.
-- **Session persistence (optional):** set `SUPABASE_URL` and
-  `SUPABASE_SERVICE_ROLE_KEY` in `agent/.env` (see `.env.example`) to let a
-  student restore a saved plan across browsers/devices by re-entering the
-  email they used before (`GET /session`, `agent/student_store.py`). Left
-  empty, everything works exactly as before this existed - purely additive.
-  Also set both in the Vercel project's Environment Variables for
-  production; they're not read from `agent/.env` there.
-  **Identity boundary, stated plainly**: the app never asks for a password
-  and never verifies an email belongs to whoever typed it - per the course
-  spec, the GUI must have no login/auth guard at all. The email is hashed
-  (SHA-256, client-side, in `site/index.html`) before it's ever sent, so a
-  raw address never sits in Supabase or in Vercel's request logs - but
-  that's leak-hygiene, not access control: anyone who already knows or
-  guesses a specific student's email can compute the same hash themselves
-  and look up that saved plan directly, with or without this UI. That's an
-  inherent consequence of the spec's no-auth requirement, not a bug in the
-  implementation - documented here so it's a known, accepted trade-off
-  rather than something discovered later.
-- **Transcript upload (optional):** a student can upload their official
-  Technion transcript PDF instead of clicking through the course checklist -
-  see `POST /transcript`, `agent/transcript_parser.py`. Never stores the raw
-  PDF or its extracted text anywhere; only course numbers, pass/fail, and
-  grades survive, and those only ever live in memory for the request unless
-  `student_key` is also set (in which case they're saved the same way any
-  other resolved state is - see above).
-- **Grade-improvement retakes and explicit add requests:** see the two
-  dedicated sections above - both are hard-enforced in code across every
-  delivery path, not just prompted, and a student's own retake question
-  ("do you recommend retaking X?") is answered from their real known grade
-  and the course's real historical average, never a guess.
-- **Official semester placement (`track.official_semester`):** Technion's own
-  requirement-tree API is neither complete (missing real mandatory courses
-  the official DDS diagrams show) nor precise (also tags some courses
-  "Mandatory" that the diagrams never list, and the prerequisite-depth
-  heuristic used as a fallback is only ever an approximation of real
-  curriculum pacing). Real per-course semester placement, hand-digitized
-  from each track's official DDS diagram and cross-checked against its
-  printed credit totals, now overrides the heuristic wherever it's known -
-  see `agent/data_bundle.py`'s `Track.official_semester` and
-  `_CONFIRMED_NON_REQUIREMENTS`. Currently covers all 3 tracks, including
-  הנדסת תעשיה וניהול (previously excluded from `/tracks` entirely because it
-  has no flat mandatory-course list in Technion's tree - digitizing its
-  diagram gave it one, so it's selectable now; semesters 1-4 are fully
-  accurate, its later-semester "specialization chain" requirement isn't
-  modeled yet - see `docs/enhancement-checklist.md` item 6).
-- **Live course-offering check:** right before delivering a plan, the agent
-  makes one real-time check against Technion's own system to confirm the
-  final candidate courses are still actually offered - `data/track_*.json`
-  is a snapshot, only refreshed when someone reruns the pipeline; this
-  catches a course that changed in between. Fails open (never blocks
-  delivery on a network hiccup) - see `agent/live_offering_check.py`.
-- **Requirement-tree "choice group" phantoms:** Technion's requirement tree
-  is shared across tracks/faculties, so it sometimes pairs a track's real,
-  already-known-required course variant (e.g. the Calculus a specific track
-  actually requires) with a DIFFERENT track's variant of the same subject
-  under one shared "pick one" node. A choice group is only ever surfaced to
-  the student when NEITHER option is already a confirmed real requirement -
-  see `_extract_mandatory_choice_groups` in `agent/data_bundle.py`.
-- **Session save/restore requires a Technion campus email**
-  (`@campus.technion.ac.il`) - client-side only, since the backend never
-  sees the raw address (only its SHA-256 hash - see the identity boundary
-  note above), so this is a courtesy check for honest students, not access
-  control.
-- **Back to previous plan:** once a plan has been revised at least once, a
-  button restores the prior version in full - same rendering path as any
-  other plan, so Print/Add to calendar/Share image all work on it exactly
-  as normal - and rewinds the conversation's memory so the next message
-  revises from the restored plan, not the abandoned one. Repeatable
-  (steps one plan further back each click), client-side only (`site/index.html`'s
-  `planHistory`), survives a page reload via the existing localStorage
-  session blob.
+**Session save/restore, transcript upload, and the live offering check are
+all optional and fail open** — leave the relevant environment variables
+unset and the app behaves exactly as if they didn't exist; a hiccup in any
+of them never blocks a plan from being delivered.
