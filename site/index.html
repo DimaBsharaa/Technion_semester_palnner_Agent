@@ -1254,6 +1254,20 @@ function textNode(text) {
 // The model sometimes emits markdown bold (**like this**) in its prose;
 // rendering it as literal asterisks looks broken. Build DOM nodes instead
 // of innerHTML so the text itself can never inject markup.
+function formatExplanationText(text) {
+  // The backend appends its own deterministic corrections as separate
+  // sentences (" Note: ...", "Still open: ...") onto the model's own
+  // prose - all in one run-on paragraph. Breaking a line before each of
+  // these recurring lead-ins (never mid-sentence, since they're fixed
+  // markers the backend itself always uses) turns that into one thought
+  // per line without touching how the backend builds the text at all.
+  return String(text || '')
+    .replace(/\s*(Note:)/g, '\n$1')
+    .replace(/\s*(Still open:)/g, '\n$1')
+    .replace(/\s*(One more thing[,:])/g, '\n$1')
+    .trim();
+}
+
 function richTextInto(el, text) {
   const parts = String(text || '').split('**');
   parts.forEach((part, i) => {
@@ -1805,7 +1819,7 @@ function renderPlanResult(planResult, priorPlan) {
 
   const explanation = document.createElement('div');
   explanation.className = 'plan-explanation';
-  richTextInto(explanation, planResult.explanation || '');
+  richTextInto(explanation, formatExplanationText(planResult.explanation));
   wrap.appendChild(reveal(explanation));
 
   const feedbackPrompt = document.createElement('div');
