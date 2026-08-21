@@ -314,6 +314,7 @@ def build_dispatch(
                 passed,
                 failed,
                 approved_retake_course=verify_kwargs.get("approved_retake_course"),
+                confirmed_grade_retakes=verify_kwargs.get("confirmed_grade_retakes"),
             )
         }
 

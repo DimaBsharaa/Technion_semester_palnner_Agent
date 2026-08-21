@@ -860,6 +860,13 @@ def run_agent_turn_v2(
     # Genuinely locked (unmet prerequisites) courses are excluded here -
     # those can't be forced in no matter what the student wants, but the
     # model is told to explain why, not just go silent.
+    # Found live via independent review: a course number the student typed
+    # that doesn't exist in the catalog at all (typo, wrong track, made up)
+    # was silently dropped right here with no trace anywhere downstream -
+    # unlike the locked/unavailable/already-passed cases just below, which
+    # all get a guaranteed explanation. Split off the same way so it gets
+    # one too, instead of just vanishing.
+    requested_adds_unknown = {c for c in state.get("requested_add_courses", []) if c not in track.courses}
     requested_add_raw = [c for c in state.get("requested_add_courses", []) if c in track.courses]
     # Found live: a student asked to "add" a course by plain name (no
     # "retake"/"again"/"repeat" language) that she'd ALREADY passed - this
@@ -886,7 +893,7 @@ def run_agent_turn_v2(
     # backstop further down handles telling the student plainly why.
     requested_adds_unavailable = {c for c in requested_adds if not track.courses[c].get("offered_next_semester")}
     requested_adds = [c for c in requested_adds if c not in requested_adds_unavailable]
-    if requested_adds or requested_adds_locked or requested_adds_unavailable or requested_adds_already_passed:
+    if requested_adds or requested_adds_locked or requested_adds_unavailable or requested_adds_already_passed or requested_adds_unknown:
         tool_log.append(
             {
                 "name": "requested_adds",
@@ -896,6 +903,7 @@ def run_agent_turn_v2(
                     "locked": sorted(requested_adds_locked),
                     "unavailable": sorted(requested_adds_unavailable),
                     "already_passed": sorted(requested_adds_already_passed),
+                    "unknown": sorted(requested_adds_unknown),
                 },
             }
         )
@@ -2020,6 +2028,18 @@ def run_agent_turn_v2(
             f" On {unavailable_name}: you asked to add it, but it isn't offered this semester at all - "
             "there's no section to register for, so I can't include it no matter what. It'll need to "
             "wait for a semester it's actually offered."
+        )
+
+    # Guaranteed explanation for a requested course number that doesn't
+    # exist in the catalog at all - found via independent review, this was
+    # silently dropped with zero trace anywhere. No course name to report
+    # (it isn't in track.courses), so this names the raw number instead.
+    for unknown_course in sorted(requested_adds_unknown):
+        if unknown_course in final_explanation:
+            continue
+        final_explanation += (
+            f" On {unknown_course}: I couldn't find a course with that number in this track's catalog, "
+            "so I couldn't add it - double check the number, or tell me the course name instead."
         )
 
     # Guaranteed explanation for a requested add that's already passed -

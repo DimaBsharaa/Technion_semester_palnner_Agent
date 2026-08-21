@@ -690,6 +690,43 @@ finally:
     arl._call_with_tools = orig
 
 
+# --- Test 13b: a requested add that doesn't exist in the catalog at all is explained, never silently dropped ---
+# Found via independent review: a typo'd/made-up course number fell through
+# requested_add_raw's "if c in track.courses" filter with zero trace
+# anywhere downstream - unlike the unavailable/locked/already-passed cases
+# just above, which all get a guaranteed explanation.
+print("--- requested course number not in the catalog at all is explained, never silently dropped ---")
+
+UNKNOWN_TARGET = "00000000"  # not a real course number in any track
+
+
+def script_deliver_ignoring_unknown_request(_messages):
+    return msg([tool_call("deliver_plan", {"course_numbers": ["03940804"], "explanation": "here you go"})]), 0.0
+
+
+unknown_state = state_with_prereqs_for_strong()
+unknown_state["requested_add_courses"] = [UNKNOWN_TARGET]
+
+arl._call_with_tools = script_deliver_ignoring_unknown_request
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID, [{"role": "user", "content": f"add {UNKNOWN_TARGET} please"}], 0.0, state_override=unknown_state
+    )
+    explanation = res["plan_result"]["explanation"]
+    adds_entry = next((t for t in res["tool_log"] if t["name"] == "requested_adds"), None)
+    check(
+        adds_entry is not None and UNKNOWN_TARGET in adds_entry["result"]["unknown"],
+        "the unknown course number is recognized and logged, not silently dropped",
+    )
+    check(UNKNOWN_TARGET in explanation, "the unknown course number is named in the explanation")
+    check(
+        UNKNOWN_TARGET not in [c["course_number"] for c in res["plan_result"]["courses"]],
+        "an unknown course number is never in the delivered plan",
+    )
+finally:
+    arl._call_with_tools = orig
+
+
 # --- Test 14: a requested add that collides is negotiated, then forced in on confirmation ---
 # Found live: a student asked to add a specific course FIVE TIMES across
 # revision turns and it just kept silently vanishing - add_enforced forced
