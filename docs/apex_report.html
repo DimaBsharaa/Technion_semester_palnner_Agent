@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>APEX Report</title>
+  <style>
+    @page { size: A4; margin: 20mm; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #1f2937;
+      background: #ffffff;
+      font-size: 11pt;
+      line-height: 1.45;
+    }
+    h1 {
+      font-size: 24pt;
+      margin: 0 0 6px;
+      font-weight: 700;
+      color: #111827;
+    }
+    h2 {
+      font-size: 14pt;
+      margin: 22px 0 7px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #d1d5db;
+      color: #111827;
+    }
+    h3 {
+      font-size: 11.5pt;
+      margin: 14px 0 4px;
+      color: #111827;
+    }
+    p { margin: 0 0 8px; }
+    ul { margin: 6px 0 10px 20px; padding: 0; }
+    li { margin: 3px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 12px;
+      font-size: 10pt;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 7px 8px;
+      border: 1px solid #d1d5db;
+    }
+    th { background: #f3f4f6; }
+    code {
+      font-family: Consolas, monospace;
+      font-size: 9.5pt;
+      background: #f3f4f6;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .muted { color: #4b5563; }
+    .title-block {
+      border-bottom: 2px solid #111827;
+      padding-bottom: 12px;
+      margin-bottom: 18px;
+    }
+    .diagram {
+      margin-top: 10px;
+      border: 1px solid #d1d5db;
+      padding: 8px;
+    }
+    .diagram img {
+      display: block;
+      width: 100%;
+    }
+    .page-break { page-break-before: always; }
+  </style>
+</head>
+<body>
+  <div class="title-block">
+    <h1>APEX Semester Planning Agent</h1>
+    <p class="muted">Project report</p>
+    <p>Live demo: https://technion-semester-palnner-agent.vercel.app</p>
+    <p>Team APEX (batch 2_5): Manhal Ghoummaid, Dima Bshara, Diyar Husayyan</p>
+  </div>
+
+  <h2>Project Summary</h2>
+  <p>
+    APEX is a Technion semester-planning agent. The student describes their situation in natural language, and the system builds a semester plan with courses, timetable, exams, risks, and explanations.
+  </p>
+  <p>
+    The project has two parts. The offline part is a data pipeline that prepares reliable course data. The online part is an agent that chooses tools, checks plans, repairs them, and answers the student.
+  </p>
+
+  <h2>Supported Use Cases</h2>
+  <ul>
+    <li>Build a semester plan from Hebrew or English free text.</li>
+    <li>Respect blocked weekdays, pace preference, passed courses, and failed courses.</li>
+    <li>Prioritize failed retakes when they block future courses.</li>
+    <li>Suggest grade-improvement retakes only as a proposal, never as a silent addition.</li>
+    <li>Answer course questions using real CheeseFork review data.</li>
+    <li>Revise a plan on follow-up, such as adding, removing, or swapping a course.</li>
+    <li>Parse an uploaded transcript PDF into courses and grades.</li>
+    <li>Optionally restore sessions with Supabase, using a hashed student email.</li>
+  </ul>
+
+  <h2>Architecture</h2>
+  <p>
+    The default runtime is a bounded ReAct-style loop. The model does not produce a plan in one shot. It receives a set of tools, chooses which tool to call, reads the tool result, and decides the next step.
+  </p>
+  <table>
+    <thead><tr><th>Module</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td><code>Understand</code></td><td>Extracts structured student state from the conversation.</td></tr>
+      <tr><td><code>PlanningLoop</code></td><td>Chooses tools, drafts plans, verifies plans, and repairs when needed.</td></tr>
+      <tr><td><code>CourseQA</code></td><td>Answers focused course questions without running a full planner.</td></tr>
+    </tbody>
+  </table>
+  <div class="diagram">
+    <img src="../agent/static/architecture.png" alt="Model architecture diagram">
+  </div>
+
+  <div class="page-break"></div>
+
+  <h2>Tools</h2>
+  <p>
+    The agent has exactly 15 model-callable tools. Three diagnostics are also injected automatically every planning turn to reduce cost and avoid repeated calls: progress assessment, catalog context, and prerequisite graph context.
+  </p>
+  <table>
+    <thead><tr><th>Tool area</th><th>Examples</th></tr></thead>
+    <tbody>
+      <tr><td>Course search and catalog</td><td><code>search_courses</code>, <code>fetch_catalog</code>, <code>query_prereq_graph</code></td></tr>
+      <tr><td>Reviews and grades</td><td><code>summarize_cheesefork</code>, grade-improvement analysis from technion-histograms</td></tr>
+      <tr><td>Plan checks</td><td><code>verify_plan</code>, <code>check_invariants</code>, <code>compare_plans</code></td></tr>
+      <tr><td>Schedule and exams</td><td><code>weekly_schedule_analyzer</code>, <code>fetch_exam_dates</code>, <code>exam_study_planner</code></td></tr>
+      <tr><td>Progress and risk</td><td><code>assess_progress</code>, <code>simulate_future_impact</code>, <code>roadmap_to_graduation</code>, <code>risk_report</code></td></tr>
+      <tr><td>Final answer</td><td><code>deliver_plan</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Data Sources</h2>
+  <table>
+    <thead><tr><th>Source</th><th>Used for</th></tr></thead>
+    <tbody>
+      <tr><td>Technion course API</td><td>Catalog, requirements, prerequisites, schedules, sections, and exam dates.</td></tr>
+      <tr><td>Official track diagrams</td><td>Correct semester placement for mandatory courses.</td></tr>
+      <tr><td>CheeseFork</td><td>Student reviews, difficulty, satisfaction, and load.</td></tr>
+      <tr><td>technion-histograms</td><td>Historical course averages for grade-improvement reasoning.</td></tr>
+      <tr><td>Student input</td><td>Passed courses, failed courses, grades, and transcript PDF.</td></tr>
+      <tr><td>Supabase</td><td>Optional session persistence.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Why There Is No Large RAG Layer</h2>
+  <p>
+    The main planning data is structured. Course numbers, prerequisites, credits, section times, exam dates, and passed courses need exact checks. For this reason, the project uses typed tools rather than vector retrieval for the core planner.
+  </p>
+  <p>
+    A small policy RAG tool could be added later for academic regulations or administrative documents. It was not added to this version because it would not improve the core scheduling and verification task.
+  </p>
+
+  <h2>Required Endpoints</h2>
+  <table>
+    <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>GET /api/team_info</code></td><td>Returns group number, team name, and students.</td></tr>
+      <tr><td><code>GET /api/agent_info</code></td><td>Returns description, purpose, prompt template, examples, and steps.</td></tr>
+      <tr><td><code>GET /api/model_architecture</code></td><td>Returns the architecture diagram as PNG.</td></tr>
+      <tr><td><code>POST /api/execute</code></td><td>Runs a one-shot prompt and returns <code>status</code>, <code>error</code>, <code>response</code>, and <code>steps</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Current Limits</h2>
+  <ul>
+    <li>The system does not register students to courses.</li>
+    <li>The system does not access private Technion accounts.</li>
+    <li>The data bundle is a snapshot, with a final live offering check before delivery.</li>
+    <li>If a fully clean plan is not found, the agent reports the best honest plan and names the remaining issue.</li>
+  </ul>
+</body>
+</html>

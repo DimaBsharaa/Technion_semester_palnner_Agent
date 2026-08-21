@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>APEX What We Built</title>
+  <style>
+    @page { size: A4; margin: 20mm; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #1f2937;
+      background: #ffffff;
+      font-size: 11pt;
+      line-height: 1.45;
+    }
+    h1 {
+      font-size: 24pt;
+      margin: 0 0 6px;
+      color: #111827;
+    }
+    h2 {
+      font-size: 14pt;
+      margin: 22px 0 7px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #d1d5db;
+      color: #111827;
+    }
+    p { margin: 0 0 8px; }
+    ul { margin: 6px 0 10px 20px; padding: 0; }
+    li { margin: 3px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 12px;
+      font-size: 10pt;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 7px 8px;
+      border: 1px solid #d1d5db;
+    }
+    th { background: #f3f4f6; }
+    code {
+      font-family: Consolas, monospace;
+      font-size: 9.5pt;
+      background: #f3f4f6;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .muted { color: #4b5563; }
+    .title-block {
+      border-bottom: 2px solid #111827;
+      padding-bottom: 12px;
+      margin-bottom: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="title-block">
+    <h1>What We Built</h1>
+    <p class="muted">APEX Semester Planning Agent</p>
+    <p>Live demo: https://technion-semester-palnner-agent.vercel.app</p>
+  </div>
+
+  <h2>Short Version</h2>
+  <p>
+    We built a working semester-planning agent for Technion students. It has a frontend, required API endpoints, an offline data pipeline, a ReAct agent loop, planning tools, verification tools, optional memory, and transcript upload.
+  </p>
+
+  <h2>Main Components</h2>
+  <table>
+    <thead><tr><th>Component</th><th>What was built</th></tr></thead>
+    <tbody>
+      <tr><td>Frontend</td><td>A single-page web app with track selection, chat intake, plan display, transcript upload, cost display, and trace display.</td></tr>
+      <tr><td>Backend</td><td>FastAPI server with chat endpoints, streaming support, transcript parsing, session restore, and the required assignment endpoints.</td></tr>
+      <tr><td>Agent loop</td><td>A bounded ReAct loop where the model chooses tools and ends with <code>deliver_plan</code>.</td></tr>
+      <tr><td>Offline data pipeline</td><td>Scripts that fetch and package Technion catalog data, requirements, schedules, exams, CheeseFork reviews, and grade histograms.</td></tr>
+      <tr><td>Verification</td><td>Python checks for prerequisites, unknown courses, already-passed courses, duplicate courses, credit range, mandatory progress, schedule clashes, workload, and exam spacing.</td></tr>
+      <tr><td>Persistence</td><td>Optional Supabase session save and restore using a hashed student email.</td></tr>
+      <tr><td>Deployment</td><td>Vercel deployment with the root GUI and the required API routes.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Feature List</h2>
+  <ul>
+    <li>Free-text planning in Hebrew or English.</li>
+    <li>Three supported Technion tracks.</li>
+    <li>Passed-course and failed-course handling.</li>
+    <li>Failed-course retake priority.</li>
+    <li>Grade-improvement retake analysis using the student's grade, course average, and the student's own average.</li>
+    <li>Explicit add, remove, and swap requests.</li>
+    <li>Course-question mode grounded in CheeseFork reviews.</li>
+    <li>Section-level weekly timetable analysis.</li>
+    <li>Exam calendar and exam-spacing checks.</li>
+    <li>Workload score and risk report.</li>
+    <li>Roadmap to graduation.</li>
+    <li>Live offering check before final delivery.</li>
+    <li>Transcript PDF parsing.</li>
+    <li>Optional Supabase memory.</li>
+    <li>Model architecture diagram endpoint.</li>
+    <li>Step trace for the agent's reasoning loop.</li>
+  </ul>
+
+  <h2>What APEX Can Do - Examples</h2>
+  <p>
+    Real prompts against the live agent and the real text it returned - not invented examples.
+  </p>
+
+  <h3>Building a plan, resolving a conflict, and proposing a retake in one turn</h3>
+  <p class="muted">Prompt: student starting semester 4, already passed "Human Factors in Data" (גורמי אנוש בדאטא) with a 55, class average 89.4.</p>
+  <p>
+    <em>"This is the best plan I found (7 courses, 18.5 credits) - I couldn't fully satisfy every constraint within this round. Still open: class time overlaps with [a humanities elective] in every section combination. Note: [that elective] was removed from the plan because its class times collide with another course in every available section combination - a clashing week is never delivered. Note: added [a mandatory course] - the plan had fallen below the credit floor; these fill it back out from the available shortlist. One more thing: your grade in גורמי אנוש בדאטא was notably below the comparison averages - want me to add a retake of it to your plan next time?"</em>
+  </p>
+  <p class="muted">Next turn, student replies "yes, add the retake":</p>
+  <p>
+    <em>"...Note: added your confirmed retake of גורמי אנוש בדאטא."</em> The course now appears in the delivered plan tagged as a retake - never added without that explicit yes.
+  </p>
+
+  <h3>Refusing a course that doesn't exist, instead of silently dropping the request</h3>
+  <p class="muted">Prompt: "add course 00000000 please" (not a real course number in the catalog).</p>
+  <p>
+    <em>"The added 00000000 can't be included because it isn't a valid course number, so that request is the only thing I had to reject."</em>
+  </p>
+
+  <h3>Recognizing when nothing needs to change</h3>
+  <p class="muted">Prompt: "Looks perfect, thank you!" - a plain closing remark on an already-delivered plan.</p>
+  <p>
+    <em>"Glad it works for you! Come back anytime you want to change something."</em> No replanning runs at all - the agent recognizes this as an acknowledgment, not a change request, so the existing plan is returned untouched at a fraction of the usual cost.
+  </p>
+
+  <h2>Build Timeline</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Data collection</td><td>Built scripts for Technion data, CheeseFork reviews, and grade histograms.</td></tr>
+      <tr><td>Planner foundation</td><td>Built the first structured planning pipeline with draft, verify, repair, and explain stages.</td></tr>
+      <tr><td>Agent upgrade</td><td>Moved the main runtime to a ReAct loop with model-chosen tools.</td></tr>
+      <tr><td>Planning quality</td><td>Added reviews, exam spacing, workload, future impact, risk, and roadmap tools.</td></tr>
+      <tr><td>Reliability</td><td>Added deterministic guards for common failure cases and final delivery checks.</td></tr>
+      <tr><td>Product layer</td><td>Added frontend, transcript upload, Supabase memory, deployment, and assignment endpoints.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Testing</h2>
+  <table>
+    <thead><tr><th>Test group</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td>Mocked tests</td><td>Check hard guarantees without spending model budget.</td></tr>
+      <tr><td>Architecture tests</td><td>Show the difference between the pipeline mode and the ReAct agent mode.</td></tr>
+      <tr><td>Revision tests</td><td>Check that follow-up requests preserve known state and do not restart unnecessarily.</td></tr>
+      <tr><td>Live tests</td><td>Exercise real model behavior on planning, retakes, constraints, and course questions.</td></tr>
+      <tr><td>Endpoint tests</td><td>Confirm the required Vercel routes respond with the expected shape.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Design Choice About RAG</h2>
+  <p>
+    We did not add a large RAG layer because the core task depends on exact structured facts. A vector search result should not decide whether a course is offered, whether prerequisites are met, or whether two classes overlap.
+  </p>
+  <p>
+    If the project grows, the best RAG addition would be a small policy search tool for academic regulations. That is separate from the planning core.
+  </p>
+
+  <h2>Final State</h2>
+  <p>
+    The project is an agent backed by a data pipeline. The pipeline prepares the knowledge. The runtime agent chooses tools, checks evidence, builds plans, repairs failures, and explains the result to the student.
+  </p>
+</body>
+</html>
