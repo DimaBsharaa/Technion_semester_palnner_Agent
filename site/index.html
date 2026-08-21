@@ -1041,12 +1041,19 @@ function applyRestoredSession(saved) {
 function downloadIcs(planResult) {
   const pad = n => String(n).padStart(2, '0');
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//SemesterPlanner//EN'];
+  // RFC 5545 requires DTSTAMP on every VEVENT - most calendar apps tolerate
+  // its absence, but Outlook desktop in particular can reject or silently
+  // drop an event without one. Same value for every event in this export
+  // (the moment it was generated), computed once.
+  const now = new Date();
+  const dtstamp = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T`
+    + `${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
   let uid = 0;
   for (const course of planResult.courses || []) {
     for (const [label, entries] of Object.entries(course.exams || {})) {
       for (const e of entries) {
         const d = e.date.replace(/-/g, '');
-        lines.push('BEGIN:VEVENT', `UID:exam-${++uid}@planner`, `DTSTART;VALUE=DATE:${d}`,
+        lines.push('BEGIN:VEVENT', `UID:exam-${++uid}@planner`, `DTSTAMP:${dtstamp}`, `DTSTART;VALUE=DATE:${d}`,
           `SUMMARY:📝 ${course.name} (${label.replace('_', ' ')})`, 'END:VEVENT');
       }
     }
@@ -1058,7 +1065,7 @@ function downloadIcs(planResult) {
       const target = new Date(now);
       target.setDate(now.getDate() + ((s.weekday - now.getDay() + 7) % 7 || 7));
       const ds = `${target.getFullYear()}${pad(target.getMonth() + 1)}${pad(target.getDate())}`;
-      lines.push('BEGIN:VEVENT', `UID:class-${++uid}@planner`,
+      lines.push('BEGIN:VEVENT', `UID:class-${++uid}@planner`, `DTSTAMP:${dtstamp}`,
         `DTSTART:${ds}T${s.start.replace(':', '')}00`,
         `DTEND:${ds}T${s.end.replace(':', '')}00`,
         'RRULE:FREQ=WEEKLY;COUNT=13',
