@@ -412,6 +412,19 @@ honestly read either way, prefer "question": answering costs nothing and \
 can always be followed by an explicit add next turn, while wrongly \
 mutating the plan risks silently discarding something the student already \
 decided on.
+Third value, "acknowledgment": ONLY when a plan was already delivered \
+this conversation AND the latest message is purely a closing remark with \
+NO new information and NOTHING for the plan to react to - "looks perfect, \
+thank you!", "great, thanks", "perfect", "sounds good", "ok thanks bye". \
+Found live: this was falling through to "plan" and re-running the entire \
+planning loop on a message asking for nothing, non-deterministically \
+churning the already-accepted plan (once dropping a real course the \
+student never asked to remove) - purely wasted cost and risk with no \
+possible benefit, since there is nothing to act on. The moment a message \
+contains ANY new fact, complaint, or request - even mixed with thanks \
+("perfect, thanks! one more thing, can you also...") - it is "plan", not \
+"acknowledgment"; this value is only for messages with truly nothing left \
+to do.
 - "question_courses": when intent is "question", the 8-digit numbers of \
 the course(s) being asked about (resolved via the catalog); else [].
 - "ready_to_plan": true once you have enough of the mandatory list's \
@@ -523,7 +536,9 @@ def _normalize_state(state: dict) -> dict:
         if requested_retake not in state["passed_courses"]:
             state["passed_courses"] = sorted(set(state["passed_courses"]) | {requested_retake})
     state["requested_retake_course"] = requested_retake or None
-    state["intent"] = state.get("intent") if state.get("intent") in ("plan", "question") else "plan"
+    state["intent"] = (
+        state.get("intent") if state.get("intent") in ("plan", "question", "acknowledgment") else "plan"
+    )
     state["question_courses"] = [str(c).zfill(8) for c in (state.get("question_courses") or [])]
 
     valid_missing = {"semester_number", "weekdays", "pace", "courses"}

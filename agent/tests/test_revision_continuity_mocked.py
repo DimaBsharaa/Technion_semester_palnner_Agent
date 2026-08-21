@@ -422,6 +422,45 @@ finally:
     _tools.verify_plan = orig_verify
 
 
+# --- Part 2f: a pure closing remark never touches the plan ---
+# Found live: "Looks perfect, thank you!" - a message with nothing to act
+# on - was falling through to a normal revision turn and running the ENTIRE
+# planning loop, non-deterministically churning a plan the student already
+# accepted (once dropping a real course). intent="acknowledgment" should
+# short-circuit before any tool call at all.
+print("--- pure acknowledgment ('looks perfect, thanks!') never re-plans, never touches the plan ---")
+
+
+def fake_extract_acknowledgment(track, messages, known_state=None, proposed_retake=None, pending_forced_add=None):
+    d = dict(degraded)
+    d["intent"] = "acknowledgment"
+    return d, 0.0
+
+
+def call_with_tools_must_not_fire(_messages):
+    raise AssertionError("the planning loop must never run on a pure acknowledgment turn")
+
+
+arl._extract_student_state = fake_extract_acknowledgment
+arl._call_with_tools = call_with_tools_must_not_fire
+try:
+    res = arl.run_agent_turn_v2(
+        TRACK_ID,
+        [{"role": "user", "content": "Looks perfect, thank you!"}],
+        0.0,
+        known_context={"state": KNOWN_STATE, "previous_plan": PREVIOUS_PLAN, "previous_issues": []},
+    )
+    check(res["plan_result"] is None, "no new plan_result - the frontend keeps whatever's already on the desk")
+    check(res["stopped_reason"] == "acknowledged", "stopped_reason marks this as a pure acknowledgment")
+    check("deliver_plan" not in json.dumps(res["tool_log"]), "no planning tool ever ran")
+    check(res["known_context"]["previous_plan"] == PREVIOUS_PLAN, "previous_plan carried through completely untouched")
+    last = res["messages"][-1]
+    check(last["role"] == "assistant" and len(last["content"]) > 0, "a short acknowledgment reply is still sent")
+finally:
+    arl._extract_student_state = orig_extract
+    arl._call_with_tools = orig_call
+
+
 # --- Part 3: without a previous plan, gap-fill still works normally ---
 print("--- first turn: gap-fill unaffected ---")
 arl._extract_student_state = fake_extract

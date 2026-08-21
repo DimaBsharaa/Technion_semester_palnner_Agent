@@ -702,6 +702,29 @@ def run_agent_turn_v2(
             "known_context": known_context,
         }
 
+    # A closing remark with nothing to act on ("looks perfect, thank you!")
+    # re-delivering the exact same plan untouched, at the cost of one
+    # extraction call instead of the full loop - found live: this used to
+    # fall through to a normal revision turn and non-deterministically
+    # churn an already-accepted plan the student never asked to change
+    # (once dropping a real course), purely from re-running everything on
+    # a message with nothing for the model to react to. Only short-circuits
+    # when there's actually a previous plan to re-affirm - if extraction
+    # mistags this on a from-scratch conversation, fall through to normal
+    # planning instead of returning nothing.
+    if state.get("intent") == "acknowledgment" and previous_plan and state_override is None:
+        return {
+            "messages": messages + [{"role": "assistant", "content": "Glad it works for you! Come back anytime you want to change something."}],
+            "cost_usd": cost,
+            "tool_log": tool_log,
+            "stopped_reason": "acknowledged",
+            "plan_result": None,
+            "needs_input": None,
+            # Untouched - an acknowledgment doesn't change the student's
+            # state or the plan already on the desk.
+            "known_context": known_context,
+        }
+
     if not state.get("ready_to_plan"):
         reply = state.get("clarifying_question") or "Just need a couple more things:"
         messages = messages + [{"role": "assistant", "content": reply}]
