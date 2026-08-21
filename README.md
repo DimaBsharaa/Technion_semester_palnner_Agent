@@ -99,9 +99,9 @@ turn ends when the model calls `deliver_plan`.
 
 The delivered plan is checked again by Python. The code re-verifies the final
 plan against hard invariants regardless of what the model claims, then repairs
-or explains any remaining issue before responding. See [`REPORT.pdf`](REPORT.pdf)
-for the full architecture write-up and diagram, and [`BUILD_RECORD.pdf`](BUILD_RECORD.pdf)
-for a session-by-session log of what got built and fixed.
+or explains any remaining issue before responding. See [`report.pdf`](report.pdf)
+for the full architecture write-up and diagram, and [`what_is_apex.pdf`](what_is_apex.pdf)
+for what was built and the feature set with real examples.
 
 ## Data sources
 
