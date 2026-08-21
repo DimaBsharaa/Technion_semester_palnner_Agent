@@ -23,18 +23,13 @@ _MANDATORY_CATEGORY_NAMES = {"מקצועות חובה", "Mandatory", "Mandatory 
 
 # The mirror image of the missing-courses problem: Technion's requirement-
 # tree API tags some courses "Mandatory" that the official DDS diagram
-# never lists at all - found live, cross-checking the diagram the user
-# uploaded against this exact track. 00940347 (מתמטיקה דיסקרטית, no ת')
-# showed up as its own separate checklist row right next to 00940345
-# (מתמטיקה דיסקרטית ת'), the one the diagram actually places in semester 1
-# - two rows for what's really one requirement. Per-track, per-course,
-# because this is confirmed against each track's own diagram, not a
-# general rule (00940347 might be a real requirement somewhere else).
+# never lists at all (a duplicate course number for a requirement already
+# covered elsewhere). Per-track, per-course, since this is confirmed
+# against each track's own diagram, not a general rule.
 _CONFIRMED_NON_REQUIREMENTS: dict[str, set[str]] = {
     # הנדסת מערכות מידע - 00940347: diagram wants 00940345 (ת') only.
-    # 01040022 (חשבון דיפרנציאלי ואינטגרלי 2מ', 5 pts) is the same course
-    # as 01040044 (חשבון דיפרנציאלי ואינטגרלי 2מ2, 5 pts, the one the
-    # diagram actually places in semester 2) under a second course number -
+    # 01040022 is the same course as 01040044 (the one the diagram
+    # actually places in semester 2) under a second course number -
     # confirmed by the near-identical name and identical credit points.
     "SC00001416": {"00940347", "01040022"},
 }
@@ -83,13 +78,11 @@ class Track:
         self.reverse_prereqs: dict = bundle["reverse_prereqs"]
         # A course pulled in only as a prerequisite-tree dependency (not a
         # tree leaf fetch_track_bundle.py fetched CheeseFork/histogram data
-        # for) can be missing these keys entirely - found live, this crashed
-        # every course-listing tool with a bare KeyError the moment such a
-        # course showed up as either DAY-BLOCKED-checkable or in the
-        # available-courses menu. Backfilled once, here, in the same "no
-        # reviews yet" shape cheesefork_client.py itself returns for a real
-        # course with zero reviews - not a special case, the exact same
-        # value - so every downstream reader needs no defensive code at all.
+        # for) can be missing these keys entirely, crashing any course-
+        # listing tool with a bare KeyError. Backfilled once here, in the
+        # same "no reviews yet" shape cheesefork_client.py returns for a
+        # real course with zero reviews, so downstream readers need no
+        # defensive code.
         for course in self.courses.values():
             course.setdefault(
                 "cheesefork",
@@ -99,15 +92,11 @@ class Track:
 
         # Ground truth, where we have it: Technion's own official DDS
         # ("track diagram") PDF places each course in a specific semester -
-        # a real answer to the question the prerequisite-depth heuristic
-        # below can only ever approximate. Technion's requirement-tree API
-        # doesn't expose this (confirmed live: it's missing real mandatory
-        # courses the diagram shows), so this is populated by hand from
-        # digitized diagrams, one track at a time, and is necessarily
-        # partial - absent for any course not yet transcribed. See
-        # assess_progress/backfill_passed_courses for how the two signals
-        # combine: official data wins whenever it exists, the heuristic
-        # only fills the gaps.
+        # a real answer the prerequisite-depth heuristic below can only
+        # approximate. Not exposed by Technion's requirement-tree API, so
+        # populated by hand from digitized diagrams, necessarily partial.
+        # See assess_progress/backfill_passed_courses: official data wins
+        # whenever it exists, the heuristic only fills the gaps.
         self.official_semester: dict[str, int] = {
             c: course["official_semester"] for c, course in self.courses.items() if course.get("official_semester")
         }
@@ -118,20 +107,17 @@ class Track:
             if category["name"] in _MANDATORY_CATEGORY_NAMES
             for c in _leaf_courses(category)
         }
-        # Confirmed live: Technion's own requirement-tree API is missing
-        # real mandatory courses the official DDS diagram shows (e.g.
-        # ארגון המחשב ומערכות הפעלה, מבוא לניתוח נתונים for הנדסת מערכות
-        # מידע) - even a fresh re-fetch doesn't include them, so this isn't
-        # stale data, the tree endpoint itself just doesn't cover
-        # everything the diagram does. Any course the diagram places in a
-        # semester is mandatory by definition, tree or no tree.
+        # Technion's requirement-tree API is missing real mandatory courses
+        # the official DDS diagram shows - not stale data, the tree
+        # endpoint just doesn't cover everything the diagram does. Any
+        # course the diagram places in a semester is mandatory by
+        # definition, tree or no tree.
         self.mandatory_course_numbers |= set(self.official_semester.keys())
         self.mandatory_course_numbers -= _CONFIRMED_NON_REQUIREMENTS.get(self.otjid, set())
         # Required courses that come as "pick one variant" groups (e.g.
         # calculus 1מ' OR 1מ2) live under the Mandatory category but NOT in
-        # flat "Mandatory option" leaves - missing them made the agent treat
-        # calculus/algebra/probability as ordinary electives (found live: a
-        # first-semester plan without infi or algebra).
+        # flat "Mandatory option" leaves - missing them would let the agent
+        # treat a gateway requirement like calculus as an ordinary elective.
         self.mandatory_choice_groups: list[dict] = self._extract_mandatory_choice_groups()
         all_depths = self._compute_prereq_depths(
             self.mandatory_course_numbers | {o for g in self.mandatory_choice_groups for o in g["options"]}
@@ -151,20 +137,17 @@ class Track:
 
         A group is skipped entirely if ANY of its options is already a
         confirmed flat-mandatory course (from official_semester, i.e. the
-        real digitized diagram) - not just when ALL of them are. Found
-        live: Technion's requirement tree is shared across tracks/faculties,
-        so it pairs each real, already-known-required course variant
-        (e.g. חשבון דיפרנציאלי ואינטגרלי 1מ2, the one this track's own
-        diagram actually requires) with a DIFFERENT track's variant of the
-        same subject (1מ', which isn't part of this curriculum at all) under
-        one shared "OR" node. Every single choice group across all 3 tracks
-        turned out to have exactly this shape: one real, one phantom - never
-        a genuine open choice once official_semester coverage exists. Left
-        as "pick one," the agent sometimes delivered the phantom option
-        instead of the real, already-known requirement, and otherwise
-        surfaced a fake dilemma as an unresolved open issue. This mechanism
-        still matters for whatever official_semester doesn't yet cover -
-        that's the case an actual unresolved choice would show up in."""
+        real digitized diagram) - not just when ALL of them are. Technion's
+        requirement tree is shared across tracks/faculties, so it pairs
+        each real, already-required course variant with a DIFFERENT
+        track's variant of the same subject (not part of this curriculum
+        at all) under one shared "OR" node - every choice group across all
+        3 tracks turned out to be one real option plus one phantom, never a
+        genuine open choice once official_semester coverage exists. Left
+        as "pick one," the agent could deliver the phantom option or
+        surface a fake dilemma as an open issue. Still matters for whatever
+        official_semester doesn't yet cover - that's where a real
+        unresolved choice would show up."""
         excluded = _CONFIRMED_NON_REQUIREMENTS.get(self.otjid, set())
         groups: list[dict] = []
         seen: set[frozenset] = set()
@@ -200,21 +183,19 @@ class Track:
 
     def _compute_prereq_depths(self, seed_courses: set[str]) -> dict[str, int]:
         """Technion's own data has no "recommended semester" field for any
-        course (confirmed: every leaf's Vpriox/Cgcat field is blank) - this
-        infers a rough ordering instead from the prerequisite chain across
-        the WHOLE track catalog, honoring the AND/OR structure: an OR group
-        needs only its easiest-to-reach alternative (min), an AND group
-        needs all parts (max). depth 0 = takeable in semester 1; depth N =
-        at least N semesters of prerequisites first.
+        course - this infers a rough ordering instead from the prerequisite
+        chain across the WHOLE track catalog, honoring the AND/OR
+        structure: an OR group needs only its easiest-to-reach alternative
+        (min), an AND group needs all parts (max). depth 0 = takeable in
+        semester 1; depth N = at least N semesters of prerequisites first.
 
-        An earlier version only counted prerequisites that were themselves
-        on the mandatory list, which put courses like Statistics 1 or Game
-        Theory (whose prerequisites live in other requirement categories)
-        at depth 0 - i.e. "semester 1" - and the intake checklist then asked
-        a semester-2 student about them. Alternatives outside the track
+        Only counting prerequisites that are themselves on the mandatory
+        list would put courses whose prereqs live in other requirement
+        categories at depth 0 ("semester 1"), wrongly asking a later-
+        semester student about them. Alternatives outside the track
         catalog are ignored inside OR groups (can't be sequenced) rather
-        than counted as depth 0, which would have the same collapsing
-        effect. A heuristic approximation, not ground truth."""
+        than counted as depth 0, which would have the same effect. A
+        heuristic approximation, not ground truth."""
         depths: dict[str, int] = {}
 
         def depth(course_number: str, stack: frozenset = frozenset()) -> int:
@@ -271,14 +252,12 @@ def get_track(track_id: str) -> Track:
 
 
 def list_tracks() -> list[dict]:
-    """Only tracks where a flat mandatory-course list was actually detected -
-    some tracks (confirmed: Industrial Engineering & Management) are built
-    around specialization "chains" instead of one universal required list,
-    which this data model doesn't represent yet. Excluding those here (by
-    the structural signal, not a hardcoded track ID) means a future track
-    with the same mismatch is silently skipped rather than silently broken -
-    it just won't appear as a plannable option until that structure is
-    explicitly supported."""
+    """Only tracks where a flat mandatory-course list was actually detected
+    - some tracks are built around specialization "chains" instead of one
+    universal required list, which this data model doesn't represent yet.
+    Excluded by the structural signal, not a hardcoded track ID, so a
+    future track with the same mismatch is silently skipped rather than
+    silently broken."""
     return [
         {"track_id": t.otjid, "name": t.name, "faculty": t.faculty}
         for t in TRACKS.values()

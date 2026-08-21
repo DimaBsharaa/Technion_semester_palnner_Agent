@@ -1,41 +1,27 @@
 """
-Stage 1 of the pipeline -> agent migration: a real, bounded, tool-calling
-agent loop, replacing agent_loop.py's hardcoded draft -> verify -> repair ->
+Stage 1 of the pipeline -> agent migration: a bounded, tool-calling agent
+loop that replaces agent_loop.py's hardcoded draft -> verify -> repair ->
 compare -> explain sequence with one loop where the MODEL decides which
-tool to call and when it's done - genuine OpenAI tool-calling
-(`tools=[...]`), not JSON-mode structured output at fixed Python-decided
-points.
+tool to call and when it's done (genuine OpenAI tool-calling, not
+JSON-mode structured output at fixed Python-decided points).
 
-Extraction (was there enough info to plan at all?) stays exactly as it is
-in agent_loop.py - that was never the part anyone objected to; it already
-makes two real model-driven decisions (ready_to_plan, missing_fields) and
-reuses proven, tested logic. This module only takes over once that's
-settled: given a fully-resolved student state, how should the actual
-semester plan get built?
+Extraction (is there enough info to plan?) is unchanged from agent_loop.py
+and reused as-is. This module only takes over once that's settled: given a
+resolved student state, how should the plan get built?
 
-The property that actually fixed the original free-form tool-calling
-design's reliability problems is preserved and, if anything, strengthened
-here, not removed:
-
-1. Nothing the model does in this loop is visible to the student until it
-   calls the one terminal tool, deliver_plan. It can loop, retry, call the
-   same tool twice - none of that reaches a chat turn. The failure mode
-   that killed the original design (asking permission mid-conversation,
-   rambling) structurally cannot happen here, because there is no
-   student-facing turn inside the loop, exactly like the old repair loop.
-2. Python still owns the ceiling: MAX_STEPS and SESSION_BUDGET_USD_CAP are
-   hard limits. If the model never calls deliver_plan, Python forces a
-   wrap-up using the last plan it verified (or an honest "ran out of
-   budget" note if it verified nothing).
-3. Python still owns final correctness: deliver_plan's course list is
-   always re-run through tools.verify_plan and tools.check_invariants
-   here, regardless of what the model claims about its own plan - the
+Three properties carried over from the original design, preserved here:
+1. Nothing the model does mid-loop is visible to the student until it
+   calls the terminal tool, deliver_plan - no student-facing turn inside
+   the loop, so mid-conversation rambling/permission-asking can't happen.
+2. Python owns the ceiling: MAX_STEPS and SESSION_BUDGET_USD_CAP are hard
+   limits; if the model never calls deliver_plan, Python forces a wrap-up
+   from the last verified plan.
+3. Python owns final correctness: deliver_plan's course list is always
+   re-run through tools.verify_plan and tools.check_invariants - the
    model's own bookkeeping is never trusted for hard constraints.
 
-Enabled via AGENT_MODE=react in main.py; agent_loop.py's pipeline is
-untouched and remains the default until this is validated against
-tests/test_scenarios.py and live adversarial testing (see the migration
-plan).
+Enabled via AGENT_MODE=react in main.py; agent_loop.py remains the default
+until validated against tests/test_scenarios.py and live testing.
 """
 
 import json
@@ -62,10 +48,9 @@ from agent_loop import (
 from data_bundle import Track, get_track
 from tool_schemas import REACT_TOOL_SCHEMAS, TERMINAL_TOOL_NAME, build_dispatch
 
-# With the always-needed diagnostics pre-injected (see PREINJECTED_TOOL_NAMES),
-# a full turn is now typically draft -> verify -> maybe repair -> maybe
-# compare -> deliver, so fewer steps are needed. A tighter ceiling both caps
-# worst-case spend and forces the model to converge instead of dithering.
+# With diagnostics pre-injected (see PREINJECTED_TOOL_NAMES), a turn is
+# typically draft -> verify -> maybe repair/compare -> deliver, so a tight
+# ceiling caps worst-case spend and forces convergence over dithering.
 MAX_STEPS = int(os.environ.get("REACT_MAX_STEPS", "18"))
 SESSION_BUDGET_USD_CAP = float(os.environ.get("SESSION_BUDGET_USD_CAP", "0.50"))
 
@@ -95,15 +80,13 @@ def _call_with_tools(messages: list[dict]) -> tuple[object, float]:
 
 def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: list[int] | None = None) -> str:
     """The courses the student can ACTUALLY take next semester: offered then,
-    prerequisites already satisfied, and not already passed. The model was
-    otherwise handed the whole catalog (including locked/future courses) and
-    had to infer eligibility itself - and got it wrong, padding credits with
-    filler when it couldn't tell what was really takeable.
+    prerequisites satisfied, not already passed. Handing the model the whole
+    catalog (incl. locked/future courses) made it infer eligibility itself
+    and pad credits with filler when it guessed wrong.
 
-    Courses whose EVERY section hits one of the student's excluded days get
-    an explicit DAY-BLOCKED tag: the model must not pick them (a delivered
-    plan is clash-free), but it uses them for the 'freeing Monday would
-    unlock X and Y' disclosure the advisor methodology requires."""
+    Courses whose EVERY section hits an excluded day get a DAY-BLOCKED tag:
+    the model must not pick them (plan stays clash-free), but uses them for
+    the 'freeing Monday would unlock X and Y' disclosure."""
     passed_set = set(passed)
     excluded = list(excluded_weekdays or [])
     rows = []
@@ -136,15 +119,10 @@ def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: 
         rows.append(f"{num} — {c['name']} ({c['points']} pts, {load}{sat}, {exam}, {tag}){day_note}")
     if not rows:
         return "(none - every remaining course is either not offered next semester or has unmet prerequisites)"
-    # Shuffled, not sorted by course number - found live: the model kept
-    # defaulting to the same 1-2 electives (orchestra, one specific
-    # economics elective) across completely different students, and a
-    # fixed course-number order every single request is exactly the kind
-    # of positional bias that produces that (the same courses always
-    # appearing first). Every row is still explicitly tagged
-    # MANDATORY/MANDATORY-CHOICE/elective, so shuffling never costs the
-    # model its ability to tell what's actually required - only which
-    # electives it happens to see first changes, turn to turn.
+    # Shuffled, not sorted by course number: a fixed order caused positional
+    # bias (the model kept defaulting to the same 1-2 electives shown first).
+    # Every row is still explicitly tagged MANDATORY/MANDATORY-CHOICE/
+    # elective, so shuffling only changes which electives are seen first.
     random.shuffle(rows)
     return "\n".join(rows)
 
@@ -152,7 +130,7 @@ def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: 
 def _sport_courses_in(track: Track, course_numbers: list[str]) -> list[str]:
     """Sport/PE course numbers in a plan, identified by name - used by the
     deterministic anti-padding guard, since 'at most one sport course' in
-    the prompt alone was observed being ignored live."""
+    the prompt alone was not reliably followed."""
     sport = []
     for c in course_numbers:
         name = track.courses.get(c, {}).get("name", "")
@@ -166,13 +144,11 @@ def _plan_score(
     plan: list[str] | None = None,
     previous_plan: list[str] | None = None,
 ) -> tuple:
-    """Higher is better. A passing plan always beats a failing one; then -
-    on revision turns - a plan that keeps more of the previously delivered
-    courses beats a stranger plan (a student who asked to swap ONE course
-    must never get back an unrelated plan just because it scored well);
-    then fewer open issues, then a fuller credit load. Used to keep the
-    BEST plan verified this turn - not merely the most recent - so a
-    fallback never hands the student a worse or unrecognizable plan."""
+    """Higher is better: passing beats failing; on revision turns, more
+    overlap with the previous plan beats a stranger plan that scored well
+    (a swap-one-course request must never come back unrelated); then fewer
+    open issues, then a fuller credit load. Used to keep the BEST plan
+    verified this turn, not merely the most recent."""
     if not verify_result:
         return (-1, 0, 0, 0)
     overlap = len(set(plan or []) & set(previous_plan or []))
@@ -611,10 +587,8 @@ def run_agent_turn_v2(
     frontend and main.py cannot tell which implementation answered.
 
     known_context ({"state": {...}, "previous_plan": [...]}) carries
-    forward what an earlier turn already resolved, so a follow-up message
-    is treated as a revision of the existing plan against known facts,
-    not a from-scratch re-derivation that forgets what the student was
-    already shown."""
+    forward what an earlier turn resolved, so a follow-up is treated as a
+    revision against known facts, not a from-scratch re-derivation."""
     track = get_track(track_id)
     tool_log = _EmittingList(on_event) if on_event else []
     cost = cost_so_far
@@ -640,19 +614,15 @@ def run_agent_turn_v2(
         tool_log.append({"name": "extract_student_state", "args": {}, "result": state})
         if previous_plan and known_state:
             # A plan was already delivered this conversation, so its facts
-            # are settled: enforce continuity in code (extraction refines,
-            # never un-knows) and always proceed to planning - a revision
-            # turn must never bounce the student back to the intake buttons,
-            # which is exactly the failure observed live when a student
-            # pointing out an exam conflict got re-asked what they'd passed.
+            # are settled: merge enforces continuity (extraction refines,
+            # never un-knows) so a revision turn never bounces the student
+            # back to the intake buttons for facts already established.
             state = _normalize_state(merge_known_state(state, known_state))
             tool_log.append({"name": "merge_known_state", "args": {}, "result": state})
 
-    # Deterministic, code-level check - never trust the model's own claim
-    # that "the student approved this" without confirming it matches a REAL
-    # proposal made last turn. A hallucinated or stale approval must never
-    # reach the plan-building rules below (see tools.verify_plan /
-    # check_invariants's approved_retake_course parameter).
+    # Deterministic check - never trust the model's own claim that "the
+    # student approved this"; it must match a REAL proposal from last turn
+    # (see tools.verify_plan / check_invariants's approved_retake_course).
     state["approved_retake_course"] = None
     if proposed_retake and state.get("approved_grade_retake") == proposed_retake.get("course_number"):
         state["approved_retake_course"] = proposed_retake["course_number"]
@@ -660,9 +630,8 @@ def run_agent_turn_v2(
             {"name": "grade_retake_approved", "args": {}, "result": {"course_number": state["approved_retake_course"]}}
         )
     elif state.get("requested_retake_course") in state.get("passed_courses", []):
-        # The student brought this up themselves this turn (no prior
-        # proposal to check against) - see requested_retake_course's
-        # extraction docstring for how this differs from approved_grade_retake.
+        # Student-initiated this turn (no prior proposal to check against) -
+        # see requested_retake_course's docstring re: approved_grade_retake.
         state["approved_retake_course"] = state["requested_retake_course"]
         tool_log.append(
             {
@@ -672,9 +641,9 @@ def run_agent_turn_v2(
             }
         )
 
-    # Same deterministic-confirmation pattern as approved_retake_course
-    # above: only ever trust "the student confirmed the override" when it
-    # matches a REAL proposal made last turn, never the model's own say-so.
+    # Same deterministic-confirmation pattern as approved_retake_course:
+    # only trust a confirmed override when it matches a REAL proposal from
+    # last turn, never the model's own say-so.
     state["forced_add_course"] = None
     if pending_forced_add and state.get("confirmed_forced_add") == pending_forced_add.get("course_number"):
         state["forced_add_course"] = pending_forced_add["course_number"]
@@ -682,7 +651,7 @@ def run_agent_turn_v2(
             {"name": "forced_add_confirmed", "args": {}, "result": {"course_number": state["forced_add_course"]}}
         )
 
-    # Question turns ("is X hard?") get one grounded answer from the real
+    # Question turns ("is X hard?") get one grounded answer from real
     # review data - no planning loop, no gap-fill buttons, plan untouched.
     if state.get("intent") == "question" and state_override is None:
         answer, c = answer_course_question(track, state, messages, known_context=known_context)
@@ -703,15 +672,11 @@ def run_agent_turn_v2(
         }
 
     # A closing remark with nothing to act on ("looks perfect, thank you!")
-    # re-delivering the exact same plan untouched, at the cost of one
-    # extraction call instead of the full loop - found live: this used to
-    # fall through to a normal revision turn and non-deterministically
-    # churn an already-accepted plan the student never asked to change
-    # (once dropping a real course), purely from re-running everything on
-    # a message with nothing for the model to react to. Only short-circuits
-    # when there's actually a previous plan to re-affirm - if extraction
-    # mistags this on a from-scratch conversation, fall through to normal
-    # planning instead of returning nothing.
+    # re-delivers the same plan untouched, cheaply, instead of falling
+    # through to a normal revision turn - which previously could
+    # non-deterministically churn an already-accepted plan with nothing
+    # for the model to actually react to. Only short-circuits when there's
+    # a previous plan to re-affirm; otherwise falls through to planning.
     if state.get("intent") == "acknowledgment" and previous_plan and state_override is None:
         return {
             "messages": messages + [{"role": "assistant", "content": "Glad it works for you! Come back anytime you want to change something."}],
@@ -749,17 +714,14 @@ def run_agent_turn_v2(
                     "passed_courses": state.get("passed_courses"),
                     "failed_courses": state.get("failed_courses"),
                     "grades": state.get("grades", {}),
-                    # This turn never reached the point where a fresh
-                    # approval could be resolved - just carry forward
-                    # whatever was already confirmed in earlier turns.
+                    # No fresh approval resolved this turn - carry forward what
+                    # was already confirmed earlier.
                     "confirmed_grade_retakes": sorted((known_state or {}).get("confirmed_grade_retakes") or []),
                 },
                 "previous_plan": previous_plan,
                 "previous_issues": sorted(previous_issues),
                 "previous_explanation": previous_explanation,
-                # Not resolved this turn (never reached the planning loop) -
-                # carry the incoming proposal forward unchanged rather than
-                # silently dropping it.
+                # Not resolved this turn - carry forward rather than drop.
                 "proposed_retake": proposed_retake,
                 "pending_forced_add": pending_forced_add,
             },
@@ -770,16 +732,12 @@ def run_agent_turn_v2(
     state["passed_courses"] = passed
     state["failed_courses"] = failed
     # Second chance for grade_retake_self_requested: the check above ran
-    # BEFORE backfill, against whatever passed_courses the raw extraction
-    # happened to list explicitly - found live, the same prompt sometimes
-    # has the model say "passed_all_expected: true" instead of also
-    # listing the retake course by number, leaving passed_courses empty at
-    # that point even though the SAME extraction correctly set
-    # requested_retake_course and a real grade for it. Model sampling
-    # variance, not a logic bug - backfill_passed_courses's own grade-based
-    # inference (see _normalize_state) or its expected-by-now inference can
-    # still confirm the course is genuinely passed even when the early
-    # check missed it.
+    # BEFORE backfill, against whatever passed_courses raw extraction
+    # listed explicitly - extraction can say "passed_all_expected: true"
+    # without also listing the retake course by number, leaving
+    # passed_courses empty there even though requested_retake_course and a
+    # real grade were set correctly. backfill_passed_courses's own
+    # grade-based inference can still confirm it here.
     if (
         not state["approved_retake_course"]
         and state.get("requested_retake_course")
@@ -795,19 +753,12 @@ def run_agent_turn_v2(
         )
 
     # Persists a grade-improvement retake beyond the single turn it was
-    # approved on - found live, approved_retake_course above resets to None
-    # every turn by design, so on ANY later turn (even one about something
-    # totally unrelated, like asking about a different course) the ONLY
-    # exemption verify_plan/check_invariants had for it just disappeared:
-    # they flagged it as "plan re-includes an already-passed course" and
-    # Python actively stripped it back out of the plan, even when the model
-    # correctly tried to keep it. A retake the student explicitly confirmed
-    # should never have a shelf life of exactly one turn. Union, never
-    # replace - carries every retake ever confirmed in this conversation,
-    # same lifecycle as passed_courses/failed_courses. requested_removals
-    # (a few lines below, already resolved by the time this reads it - see
-    # ordering) still lets the student explicitly drop it later if they
-    # change their mind; this only prevents it vanishing on its own.
+    # approved on: approved_retake_course resets to None every turn by
+    # design, and without this, verify_plan/check_invariants' exemption for
+    # it would vanish on any later turn, stripping it back out of the plan
+    # even when the model correctly kept it. Union, never replace - same
+    # lifecycle as passed_courses/failed_courses. requested_removals
+    # (resolved below) still lets the student explicitly drop it later.
     state["confirmed_grade_retakes"] = set((known_state or {}).get("confirmed_grade_retakes") or [])
     if state.get("approved_retake_course"):
         state["confirmed_grade_retakes"].add(state["approved_retake_course"])
@@ -818,19 +769,15 @@ def run_agent_turn_v2(
 
     dispatch = build_dispatch(track, semester_number, passed, failed, excluded_weekdays, verify_kwargs)
 
-    # Pre-compute the always-needed deterministic diagnostics once, here in
-    # code, and hand them to the model in its prompt - rather than making it
-    # spend three paid round-trips fetching them. They're logged like tool
-    # calls so the trace still shows they happened.
+    # Pre-computed once in code and handed to the model in its prompt,
+    # rather than making it spend paid round-trips fetching them. Logged
+    # like tool calls so the trace still shows they happened.
     progress = tools.assess_progress(track, semester_number, passed)
     catalog = tools.fetch_catalog(track, passed)
     prereq = tools.query_prereq_graph(track, passed, failed)
-    # A course this locked out of the model's own menu entirely
-    # (_available_courses_text drops anything with an unmet prereq) - found
-    # live, this meant a genuinely important, near-miss mandatory course
-    # (Data Structures) never got explained AT ALL unless the student
-    # happened to name it themselves. Surfaced unconditionally so the model
-    # can proactively mention it, not just answer when asked.
+    # Courses locked out of the model's own menu entirely (an unmet
+    # prereq) would otherwise never get explained unless the student named
+    # them. Surfaced unconditionally so the model can mention them proactively.
     near_locked = tools.near_locked_mandatory_courses(track, semester_number, passed, failed)
     tool_log.append({"name": "assess_progress", "args": {"preinjected": True}, "result": progress})
     tool_log.append({"name": "fetch_catalog", "args": {"preinjected": True}, "result": catalog})
@@ -840,12 +787,10 @@ def run_agent_turn_v2(
             {"name": "near_locked_mandatory_courses", "args": {"preinjected": True}, "result": near_locked}
         )
 
-    # Only computed (and only spends any prompt tokens) when the student has
-    # given at least one grade - the common case is zero grades known, and
-    # this must cost nothing when there's nothing to compare. This is raw
-    # comparison data only (course average AND the student's own average
-    # across known grades) - no threshold decides "worth mentioning" here
-    # anymore, that judgment belongs to the model (see _system_prompt).
+    # Only computed when the student has given at least one grade - free
+    # when there's nothing to compare. Raw comparison data only (course
+    # average and the student's own average); the model decides what's
+    # worth mentioning (see _system_prompt).
     grade_candidates = None
     if state.get("grades"):
         grade_candidates = tools.analyze_grade_improvement_candidates(track, passed, state["grades"])
@@ -860,11 +805,9 @@ def run_agent_turn_v2(
     available_text = _available_courses_text(track, passed, excluded_weekdays)
 
     # Courses the student EXPLICITLY asked to remove/replace this turn -
-    # extraction resolves the names to numbers; Python enforces the removal
-    # on whatever gets delivered, because "please replace X" coming back
-    # with X still in the plan was observed live even with the request in
-    # the prompt. An explicit student directive is a hard constraint, not
-    # a suggestion the model may weigh.
+    # extraction resolves names to numbers; Python enforces the removal on
+    # whatever gets delivered (the prompt alone wasn't reliably followed).
+    # An explicit student directive is a hard constraint, not a suggestion.
     requested_removals = [c for c in state.get("remove_courses", []) if c in (previous_plan or [])]
     if requested_removals:
         tool_log.append(
@@ -872,48 +815,27 @@ def run_agent_turn_v2(
         )
 
     # Courses the student EXPLICITLY asked to ADD this turn, by name -
-    # found live: a student named a specific mandatory course twice across
-    # two revision turns and it still never made it into the plan (the
-    # model apparently weighed CheeseFork difficulty/sentiment against an
-    # explicit directive, which it must never do - sentiment is color, not
-    # veto power). Symmetric to requested_removals above: an explicit
-    # student directive is a hard constraint the model must satisfy or
-    # explain, not a suggestion it may silently decline. Applies on ANY
-    # turn, not just revisions - a first message can name a course too.
-    # Genuinely locked (unmet prerequisites) courses are excluded here -
-    # those can't be forced in no matter what the student wants, but the
-    # model is told to explain why, not just go silent.
-    # Found live via independent review: a course number the student typed
-    # that doesn't exist in the catalog at all (typo, wrong track, made up)
-    # was silently dropped right here with no trace anywhere downstream -
-    # unlike the locked/unavailable/already-passed cases just below, which
-    # all get a guaranteed explanation. Split off the same way so it gets
-    # one too, instead of just vanishing.
+    # symmetric to requested_removals above: a hard constraint, never
+    # something CheeseFork sentiment gets to silently veto. Genuinely
+    # locked (unmet prereq) courses are excluded - can't be forced in, but
+    # must be explained. An unknown course number (typo/wrong track) is
+    # split off too, for the same guaranteed explanation.
     requested_adds_unknown = {c for c in state.get("requested_add_courses", []) if c not in track.courses}
     requested_add_raw = [c for c in state.get("requested_add_courses", []) if c in track.courses]
-    # Found live: a student asked to "add" a course by plain name (no
-    # "retake"/"again"/"repeat" language) that she'd ALREADY passed - this
-    # fell into a real gap between the two mechanisms that exist for
-    # exactly this kind of course: requested_add_courses (for a NOT-yet-
-    # passed course) silently filtered it out right here since it's
-    # already passed, and requested_retake_course never fires without
-    # explicit retake language. The request just vanished, with nothing
-    # downstream ever seeing it to explain why - split off here instead so
-    # it gets the same guaranteed explanation treatment as a locked or
-    # unavailable course, with a concrete next step (say "retake it" and
-    # the existing self-requested-retake path takes over from there).
+    # "Add" (no retake language) naming a course already passed falls
+    # between two mechanisms: requested_add_courses excludes already-passed
+    # courses, and requested_retake_course never fires without explicit
+    # retake language - so split it off here for its own guaranteed
+    # explanation and a concrete next step ("retake it" routes through the
+    # self-requested-retake path).
     requested_adds_already_passed = {c for c in requested_add_raw if c in passed}
     requested_adds = [c for c in requested_add_raw if c not in passed]
     requested_adds_locked = set(tools.prereq_unmet_in(track, requested_adds, passed, failed)) if requested_adds else set()
     requested_adds = [c for c in requested_adds if c not in requested_adds_locked]
-    # Same reasoning as the locked split above, for a different kind of
-    # unforceable course: found live, add_enforced (below) had no guard at
-    # all against blindly shoving a course that isn't even offered this
-    # semester into the plan - unlike the retake-approval enforcement,
-    # which already refuses to force-include an unregisterable course.
-    # There's no section to register for either way, so this is split off
-    # here and never handed to add_enforced; the guaranteed explanation
-    # backstop further down handles telling the student plainly why.
+    # Same reasoning as the locked split above: a course not offered this
+    # semester has no section to register for, so it's split off and never
+    # handed to add_enforced; the guaranteed explanation backstop below
+    # tells the student plainly why.
     requested_adds_unavailable = {c for c in requested_adds if not track.courses[c].get("offered_next_semester")}
     requested_adds = [c for c in requested_adds if c not in requested_adds_unavailable]
     if requested_adds or requested_adds_locked or requested_adds_unavailable or requested_adds_already_passed or requested_adds_unknown:
@@ -952,12 +874,10 @@ def run_agent_turn_v2(
         )
     ]
     # The loop otherwise only sees the condensed extracted state - give it
-    # the recent conversation verbatim, not just the single last message.
-    # This matters concretely: after a gap-fill form submit, the "last
-    # message" is the form's summary, and the student's actual complaint
-    # ("two exams with no gap between them") sits one message earlier - a
-    # planner that only saw the summary replanned from scratch and ignored
-    # the complaint entirely (observed live).
+    # the recent conversation verbatim too. Matters concretely: after a
+    # gap-fill form submit, the "last message" is the form's summary, and
+    # the student's actual complaint can sit one message earlier - a
+    # planner that only saw the summary ignored the complaint entirely.
     tail = [m for m in messages if m.get("role") in ("user", "assistant") and m.get("content")][-6:]
     if tail:
         transcript = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in tail)
@@ -979,15 +899,13 @@ def run_agent_turn_v2(
     best_verify_result: dict | None = None
     verified_course_sets: set[frozenset] = set()
 
-    # Revision-turn seed: verify the PREVIOUS plan against the current
+    # Revision-turn seed: verify the PREVIOUS plan against current
     # constraints up front (pure Python, no model call). Kept SEPARATE from
     # best-plan tracking: at wrap-up it competes with a one-course overlap
-    # handicap, so a model candidate that actually made the requested change
-    # (overlap n-1) beats "your plan, unchanged" (overlap n) - but a
-    # stranger plan (low overlap) still loses to the seed. Without the
-    # handicap the unchanged plan mathematically beats every swap, which is
-    # exactly the failure observed live: "replace X" came back with X still
-    # in the plan.
+    # handicap, so a candidate that actually made the requested change
+    # beats "your plan, unchanged", but a stranger plan still loses to the
+    # seed. Without the handicap, the unchanged plan mathematically beats
+    # every swap - "replace X" would come back with X still in the plan.
     seed_plan: list[str] | None = None
     seed_verify: dict | None = None
     if previous_plan:
@@ -1019,20 +937,18 @@ def run_agent_turn_v2(
     new_proposed_retake: dict | None = None
 
     for step in range(MAX_STEPS):
-        # Per-TURN spend cap, not per-conversation: cost_so_far is the whole
-        # conversation's history, and capping against the running total made
-        # every conversation degrade into budget-capped wrap-ups by turn
-        # 3-4 (found during test-plan execution). Each turn gets the same
-        # fresh allowance; the dashboard hard limit remains the real
-        # backstop for total spend.
+        # Per-TURN spend cap, not per-conversation: capping against the
+        # running total (cost_so_far includes prior turns) made later turns
+        # in a conversation degrade into budget-capped wrap-ups. Each turn
+        # gets the same fresh allowance; the dashboard hard limit is the
+        # real backstop for total spend.
         if (cost - cost_so_far) >= SESSION_BUDGET_USD_CAP:
             stopped_reason = "budget_cap"
             break
 
-        # Two steps before the ceiling, tell the model to close out NOW
-        # with its best verified candidate - a self-chosen delivery with a
-        # real explanation always beats drifting into the generic forced
-        # wrap-up.
+        # Two steps before the ceiling, tell the model to close out NOW -
+        # a self-chosen delivery with a real explanation beats drifting
+        # into the generic forced wrap-up.
         if step == MAX_STEPS - 2:
             tool_log.append({"name": "deliver_now_nudge", "args": {"steps_left": 2}, "result": {}})
             react_messages.append(
@@ -1049,10 +965,9 @@ def run_agent_turn_v2(
         cost += c
 
         if not assistant_message.tool_calls:
-            # The model responded with plain text instead of a tool call.
-            # Per the system prompt this shouldn't happen, but nothing it
-            # says here is student-facing regardless - treat it as a
-            # nudge, not a leak, and give it one more chance to comply.
+            # Plain text instead of a tool call shouldn't happen per the
+            # system prompt, but it's never student-facing regardless -
+            # treat it as a nudge, not a leak, and give one more chance.
             react_messages.append({"role": "assistant", "content": assistant_message.content or ""})
             react_messages.append(
                 {"role": "user", "content": "You must call a tool, ending with deliver_plan when done - not reply in plain text."}
@@ -1086,12 +1001,10 @@ def run_agent_turn_v2(
                 candidate = [c for c in args.get("course_numbers", []) if c in track.courses]
 
                 # Explicit-removal enforcement: the student BY NAME asked for
-                # specific course(s) out of the plan. First violation: send
-                # the model back once to do the swap properly (so a real
-                # replacement gets picked). Second violation: strip the
-                # course(s) in code - an explicit student directive is a
-                # hard constraint, and "please replace X" returning a plan
-                # that still contains X was observed live.
+                # specific course(s) out. First violation: send the model
+                # back once to do the swap properly. Second violation:
+                # strip the course(s) in code - an explicit directive is a
+                # hard constraint the prompt alone didn't reliably enforce.
                 ignored_removals = [c for c in candidate if c in requested_removals]
                 if ignored_removals:
                     if not removal_pushed and step < MAX_STEPS - 1:
@@ -1122,15 +1035,11 @@ def run_agent_turn_v2(
 
                 # Explicit-add enforcement: symmetric to the removal case
                 # above - the student BY NAME asked for specific course(s)
-                # IN. Found live: a student named a real, unlocked mandatory
-                # course explicitly, twice across two revision turns, and it
-                # never made it into the plan - the model apparently let
-                # CheeseFork difficulty/sentiment override an explicit
-                # directive. First violation: send the model back once.
-                # Second violation: add it in code (dropping the cheapest
-                # elective to make room, matching the mandatory top-up
-                # backstop's approach) - an explicit student directive is a
-                # hard constraint here too.
+                # IN, and CheeseFork difficulty/sentiment must never
+                # override that. First violation: send the model back once.
+                # Second violation: add it in code, dropping the cheapest
+                # elective to make room (matches the mandatory top-up
+                # backstop's approach).
                 missing_adds = [c for c in requested_adds if c not in candidate]
                 if missing_adds:
                     if not add_pushed and step < MAX_STEPS - 1:
@@ -1163,21 +1072,11 @@ def run_agent_turn_v2(
                         (c for c in candidate if c not in track.mandatory_course_numbers and c not in requested_adds),
                         key=lambda c: float(track.courses.get(c, {}).get("points") or 0),
                     )
-                    # BUG FIXED HERE: droppable.pop(0) was previously called
-                    # INSIDE the list-comprehension filter below, which
-                    # evaluates its condition once per element of candidate
-                    # - so it fired once per element of candidate, not once
-                    # per course being dropped. Any time candidate had more
-                    # items than droppable (the normal case - droppable
-                    # excludes every mandatory course, candidate doesn't),
-                    # this raised an unhandled IndexError and 500'd the
-                    # whole request the instant this hard-enforcement path
-                    # fired, which silently looked like "the agent just
-                    # ignored my add request" from the student's side.
-                    # Caught by a new permanent test, not live - fixed
-                    # before it could be confirmed as the cause of any
-                    # specific live report, but it is a real, serious,
-                    # previously-undiscovered crash in a heavily-used path.
+                    # droppable.pop(0) MUST stay outside any comprehension
+                    # condition below: inside one, it evaluates once per
+                    # candidate element (not once per drop) and raises
+                    # IndexError as soon as candidate outsizes droppable -
+                    # a real crash this loop hit before, on a heavily-used path.
                     for _ in missing_adds:
                         if droppable:
                             drop_c = droppable.pop(0)
@@ -1187,12 +1086,9 @@ def run_agent_turn_v2(
 
                 # Verify-before-deliver nudge: if the model tries to deliver
                 # without ever having run verify_plan this turn, send it back
-                # once to actually check its work. This costs one extra step
-                # but is the difference between a real critic loop and a
-                # single-shot guess. Guarded so it can only fire once (never
-                # an infinite loop) and skipped entirely once the budget/step
-                # ceiling is close, where correctness is handled server-side
-                # anyway.
+                # once - the difference between a real critic loop and a
+                # single-shot guess. Fires at most once, and skipped near
+                # the step ceiling where correctness is handled server-side.
                 if not verified_course_sets and not verify_nudged and step < MAX_STEPS - 2:
                     verify_nudged = True
                     tool_log.append({"name": "verify_before_deliver_nudge", "args": {}, "result": {}})
@@ -1208,26 +1104,15 @@ def run_agent_turn_v2(
                     continue
 
                 # The student just explicitly approved a grade-improvement
-                # retake (state["approved_retake_course"]) but the model's
-                # course list doesn't include it - live testing showed this
-                # happening even with the exception clearly stated in the
-                # system prompt (a "may include" instruction alone wasn't
-                # reliably acted on). First violation: one real chance to
-                # either include it or explicitly explain why it genuinely
-                # can't (a real schedule/prereq conflict is legitimate).
-                # Second violation: enforce in code, same as requested_adds
-                # above - live testing found the model still omitting it
-                # even after the nudge, with no conflict named at all, so
-                # this needed the same hard-requirement treatment every
-                # other explicit student directive already gets tonight.
-                # Guarded on offered_next_semester too: an approval naming a
-                # course that isn't actually offered (e.g. extraction
-                # resolved a student's mention to a stale/duplicate course
-                # number - found live: "Discrete Math" resolving to a
-                # confusable second course number instead of the real one)
-                # must never get force-included just because it's
-                # "approved" - the nudge/force below only ever applies to a
-                # genuinely registerable course.
+                # retake but the model's course list doesn't include it -
+                # a "may include" instruction alone wasn't reliably acted
+                # on. First violation: one real chance to include it or
+                # explain why it genuinely can't (a real conflict is
+                # legitimate). Second violation: enforce in code, same as
+                # requested_adds above. Guarded on offered_next_semester
+                # too: extraction can resolve a mention to a stale/
+                # duplicate course number, and an unregisterable course
+                # must never get force-included just because it's "approved".
                 approved = state.get("approved_retake_course")
                 if approved and not track.courses.get(approved, {}).get("offered_next_semester"):
                     approved = None
@@ -1266,23 +1151,18 @@ def run_agent_turn_v2(
 
                 final_explanation = args.get("explanation") or ""
                 course_reasons = args.get("course_reasons") or {}
-                # A NEW proposal the model is making THIS turn - deliberately
-                # a different variable from `proposed_retake` above (which
-                # holds LAST turn's proposal, already consumed into
-                # state["approved_retake_course"] earlier). This is what the
-                # NEXT turn will see as its incoming proposed_retake.
+                # A NEW proposal for THIS turn - distinct from `proposed_retake`
+                # above (LAST turn's, already consumed into
+                # state["approved_retake_course"]). This becomes NEXT turn's
+                # incoming proposed_retake.
                 new_proposed_retake = args.get("proposed_retake") or None
                 if new_proposed_retake and new_proposed_retake.get("course_number") in candidate:
-                    # Contradiction guard: a course can't be both proposed
-                    # and already included - if it's in the plan, there's
-                    # nothing left to propose about it.
+                    # A course can't be both proposed and already included.
                     new_proposed_retake = None
                 # Audit note only, not a safety gate - verify_plan and
-                # check_invariants are re-run unconditionally below
-                # regardless of this, so the student is never shown a
-                # falsely-"verified" plan either way. This just makes it
-                # visible in tool_log when the model delivers a course list
-                # it never actually ran through verify_plan itself.
+                # check_invariants always re-run below regardless, so the
+                # student is never shown a falsely-"verified" plan. This
+                # just logs when the model delivered without verifying itself.
                 if frozenset(candidate) not in verified_course_sets:
                     tool_log.append(
                         {
@@ -1309,15 +1189,11 @@ def run_agent_turn_v2(
                     verify_result = tools.verify_plan(
                         track, candidate, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
                     )
-                    # The model's own explanation was written for the plan
-                    # BEFORE this correction - it can describe issues that
-                    # no longer exist in the corrected list (e.g. narrating
-                    # exam-clustering from a candidate that's since been
-                    # stripped down). Once Python has changed what's
-                    # actually being delivered, only a freshly-generated,
-                    # deterministic account of the corrected list's real
-                    # issues is trustworthy - same principle as the old
-                    # pipeline never trusting stale reasoning.
+                    # The model's own explanation was written BEFORE this
+                    # correction, so it can describe issues no longer in the
+                    # corrected list. Once Python has changed what's
+                    # delivered, only a freshly-generated, deterministic
+                    # account of the real issues is trustworthy.
                     correction = (
                         "Note - a correction was applied before delivery: "
                         + "; ".join(violations)
@@ -1338,12 +1214,10 @@ def run_agent_turn_v2(
                     best_verify_result = verify_result
 
                 # Underload pushback: don't let the model hand over a
-                # half-empty semester. If the plan is clearly below the
-                # credit floor (not just a hair under) and there's still
-                # room to iterate, send it back ONCE to add courses rather
-                # than accept a punt. Fires at most once; skipped when the
-                # student opted out of minimums (min_credits 0) or near the
-                # step ceiling where correctness is handled anyway.
+                # half-empty semester. If clearly below the credit floor
+                # with room to iterate, send it back ONCE to add courses
+                # rather than accept a punt. Fires at most once; skipped
+                # when the student opted out of minimums (min_credits 0).
                 min_credits = verify_kwargs.get("min_credits", tools.DEFAULT_MIN_CREDITS)
                 if (
                     not underload_pushed
@@ -1373,10 +1247,9 @@ def run_agent_turn_v2(
                     continue
 
                 # Sport-padding pushback: "at most one sport/PE course" in
-                # the prompt was observed being ignored live (a delivered
-                # plan carried FOUR one-point sport courses as credit
-                # filler). Enforce it in code like every other rule that
-                # must actually hold: one shot, then the delivery stands.
+                # the prompt alone wasn't reliably followed (plans have been
+                # delivered with several as credit filler). Enforced in
+                # code: one shot, then the delivery stands.
                 sport = _sport_courses_in(track, candidate)
                 if len(sport) > 1 and not sport_padding_pushed and step < MAX_STEPS - 1:
                     sport_padding_pushed = True
@@ -1401,15 +1274,12 @@ def run_agent_turn_v2(
                 # grade-improvement retake the student did NOT ask to remove
                 # is missing from the delivery. Priority rule #1 (a required
                 # retake is retaken now) lived only in the prompt, and under
-                # revision pressure ("I have a conflict on that exam date")
-                # the model was observed live silently dropping the retake
-                # to satisfy the request. One shot: send it back with the
-                # dropped course(s) named - reinstate and rebalance, or
-                # deliver anyway with the omission explained honestly.
-                # Second delivery stands (the honest-disclosure explanation
-                # rules already cover it). Only fires for courses actually
-                # offered next semester - a retake that cannot be taken at
-                # all is a legitimate omission.
+                # revision pressure the model has silently dropped the
+                # retake to satisfy an unrelated request. One shot: send it
+                # back with the dropped course(s) named; second delivery
+                # stands (honest-disclosure rules cover it). Only fires for
+                # courses actually offered next semester - an untakeable
+                # retake is a legitimate omission.
                 dropped_retakes = [
                     c for c in (set(failed) | (state.get("confirmed_grade_retakes") or set()))
                     if c not in candidate
@@ -1444,12 +1314,10 @@ def run_agent_turn_v2(
 
                 # Choice-group pushback: the model tried to deliver while a
                 # required pick-one-variant group (calculus/algebra/physics/
-                # probability) it could cover RIGHT NOW is missing. Observed
-                # live even after two generic issue pushes (a first-semester
-                # plan kept orchestra over physics). This guard doesn't fix
-                # the plan - it hands the model the exact takeable variants
-                # with their facts, once, and the model decides which fits
-                # (or justifies leaving the gap honestly).
+                # probability) it could cover RIGHT NOW is missing - this
+                # has survived even the generic issue pushes below. Doesn't
+                # fix the plan; hands the model the exact takeable variants
+                # once and lets it decide (or justify leaving the gap).
                 uncovered_groups = []
                 candidate_set = set(candidate)
                 passed_set_now = set(passed)
@@ -1497,13 +1365,11 @@ def run_agent_turn_v2(
                     continue
 
                 # Issue-budget guard (the advisor's delivery standard): a
-                # plan may reach the student with AT MOST 2 open issues,
-                # and NONE of them "lazy" (credits, mandatory count, exam
+                # plan may reach the student with AT MOST 2 open issues, and
+                # NONE of them "lazy" (credits, mandatory count, exam
                 # clashes, overlaps - all fixable by substitution). Only
-                # genuinely forced issues (a day conflict the student's own
-                # constraints create) may remain. Fires up to twice, on any
-                # turn - a 5-issue delivery was observed live and is
-                # exactly what this exists to prevent.
+                # genuinely forced issues (e.g. a day conflict from the
+                # student's own constraints) may remain. Fires up to twice.
                 issues_list = verify_result.get("issues", [])
                 lazy_issues = [
                     i["reason"] for i in issues_list if "excluded weekday" not in i["reason"]
@@ -1542,12 +1408,10 @@ def run_agent_turn_v2(
                 # student came back BECAUSE the previous plan had problems.
                 # If the "revised" plan still carries an issue verbatim
                 # identical to one the previous plan had, the revision
-                # didn't do its one job - send it back ONCE with the exact
-                # carried-over issues named, demanding a swap of the
-                # involved course(s). One shot only: if the model concludes
-                # after a real attempt that the issue is genuinely
-                # unavoidable, the second delivery stands (with the honest
-                # disclosure the explanation rules already require).
+                # didn't do its job - send it back ONCE with the carried-
+                # over issues named, demanding a swap. One shot only: if
+                # genuinely unavoidable, the second delivery stands (with
+                # the honest-disclosure rules already required).
                 persistent = [
                     i["reason"] for i in verify_result.get("issues", []) if i["reason"] in previous_issues
                 ]
@@ -1615,14 +1479,12 @@ def run_agent_turn_v2(
 
     if stopped_reason != "delivered":
         # The model never self-terminated (ran out of steps or budget) -
-        # Python forces a wrap-up exactly like the old pipeline's
-        # attempts-exhausted case: never a silent failure, always
-        # something honest reaches the student. Use the BEST plan verified
-        # this turn, not merely the most recent one - and on revision
-        # turns, weigh the seed (the student's unchanged plan) with a
-        # one-course overlap handicap so a candidate that actually made
-        # the requested change beats "no change", while a stranger plan
-        # still loses to the seed.
+        # Python forces a wrap-up: never a silent failure. Uses the BEST
+        # plan verified this turn, not merely the most recent one - and on
+        # revision turns, weighs the seed (student's unchanged plan) with a
+        # one-course overlap handicap so a candidate that actually made the
+        # requested change beats "no change", while a stranger plan still
+        # loses to the seed.
         final_course_numbers = [
             c for c in (best_verified_plan or last_verified_plan or []) if c not in requested_removals
         ]
@@ -1651,10 +1513,9 @@ def run_agent_turn_v2(
         last_verify_result = tools.verify_plan(
             track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
         )
-        # Student-facing text: no internal jargon ("tool-call budget"), and
-        # on a revision turn, describe the change relative to the plan the
-        # student already has - kept / swapped out / added - which is the
-        # question they actually care about.
+        # Student-facing text: no internal jargon, and on a revision turn,
+        # describe the change relative to the student's existing plan
+        # (kept / swapped out / added) - what they actually care about.
         issues = last_verify_result.get("issues", []) if last_verify_result else []
         issues_sentence = (
             " Everything checks out." if not issues
@@ -1684,14 +1545,12 @@ def run_agent_turn_v2(
             {"name": "forced_wrapup", "args": {"reason": stopped_reason}, "result": last_verify_result}
         )
 
-    # Final safety net, regardless of which path got here: issue_budget_pushback
-    # only retries twice, then accepts whatever the model delivers even if the
-    # delivery standard ("never acceptable" - low credits, exam clashes,
-    # overlaps) is still violated. Found live: an 8-credit plan and a 1-day
-    # exam gap both reached a student this way. If a genuinely better
-    # candidate was verified earlier THIS SAME turn, prefer it over knowingly
-    # accepting a worse one - never invents a new plan, only picks among ones
-    # already checked.
+    # Final safety net: issue_budget_pushback only retries twice, then
+    # accepts whatever the model delivers even if the delivery standard
+    # (low credits, exam clashes, overlaps) is still violated. If a
+    # genuinely better candidate was verified earlier THIS SAME turn,
+    # prefer it - never invents a new plan, only picks among ones already
+    # checked.
     current_issues = (last_verify_result or {}).get("issues", [])
     current_lazy = [i["reason"] for i in current_issues if "excluded weekday" not in i["reason"]]
     if (current_lazy or len(current_issues) > 2) and best_verified_plan:
@@ -1706,14 +1565,11 @@ def run_agent_turn_v2(
                 last_verify_result = tools.verify_plan(
                     track, final_course_numbers, passed, excluded_weekdays=excluded_weekdays, **verify_kwargs
                 )
-                # {ISSUES_SENTENCE} deferred the same way {COURSE_COUNT}/
-                # {TOTAL_CREDITS} are below - a later backstop (mandatory
-                # top-up, locked-course, overlap...) can still resolve one of
-                # these issues, and a sentence written NOW would then claim a
-                # problem that's already fixed by the time this is shown to
-                # the student (found live: "only 2 mandatory course(s))"
-                # still printed after the top-up backstop had already added
-                # a 3rd).
+                # {ISSUES_SENTENCE}/{COURSE_COUNT}/{TOTAL_CREDITS} are
+                # placeholders, deferred because a later backstop (mandatory
+                # top-up, locked-course, overlap...) can still resolve one
+                # of these issues - a sentence written now could claim a
+                # problem already fixed by the time it's shown.
                 final_explanation = (
                     f"Switched to a better-verified alternative before delivering "
                     f"({{COURSE_COUNT}} course(s), {{TOTAL_CREDITS}} credits) - the plan initially reached "
@@ -1749,19 +1605,15 @@ def run_agent_turn_v2(
         )
 
     # HARD approved-retake guarantee: the in-loop nudge/enforce above only
-    # ever fires when the model actually calls deliver_plan - found live,
-    # the loop can also resolve via forced wrap-up (best_verified_plan,
-    # when the model never delivers) or the final safety swap, neither of
-    # which knew about approved_retake_course at all. An explicit student
-    # directive must survive EVERY delivery path, not just the common one -
-    # checked here unconditionally, after path selection but before the
-    # mandatory/credit top-ups below (so their own counts already include
-    # it), collision-checked since nothing but the later overlap backstop
-    # runs after this. Covers every retake ever confirmed this conversation
-    # (state["confirmed_grade_retakes"]), not just one approved THIS turn -
-    # otherwise this exact guarantee had the same one-turn shelf life as
-    # the check_invariants/verify_plan exemption above, and a retake
-    # confirmed two turns ago had nothing left protecting it here either.
+    # ever fires when the model actually calls deliver_plan - but
+    # the loop can also resolve via forced wrap-up (when the model never
+    # delivers) or the final safety swap, neither of which knew about
+    # approved_retake_course. An explicit directive must survive EVERY
+    # delivery path - checked here unconditionally, before the mandatory/
+    # credit top-ups below (so their counts already include it). Covers
+    # every retake ever confirmed this conversation
+    # (state["confirmed_grade_retakes"]), not just one approved THIS turn,
+    # so it doesn't lose protection after the turn it was confirmed on.
     approved = state.get("approved_retake_course")
     retake_targets = sorted(
         (({approved} if approved else set()) | (state.get("confirmed_grade_retakes") or set()))
@@ -1807,12 +1659,10 @@ def run_agent_turn_v2(
             tool_log.append({"name": "locked_enforced", "args": {}, "result": {"dropped": locked}})
 
     # HARD collision backstop: a delivered week must NEVER contain a real
-    # class-time collision, on any path (model delivery, forced wrap-up,
-    # empty-plan fallback). If the coordinated section assignment still has
-    # irreducible overlaps, deterministically drop the least valuable
-    # course of each colliding pair (keep retakes, then mandatory, then
-    # higher credits) until the week is clean - same philosophy as removal
-    # enforcement: judgment belongs to the model, but this is correctness.
+    # class-time collision, on any path. If the coordinated section
+    # assignment still has irreducible overlaps, deterministically drop the
+    # least valuable course of each colliding pair (keep retakes, then
+    # mandatory, then higher credits) until the week is clean.
     if final_course_numbers:
         dropped_for_overlap: list[str] = []
         while True:
@@ -1845,12 +1695,11 @@ def run_agent_turn_v2(
                 {"name": "overlap_enforced", "args": {}, "result": {"dropped": dropped_for_overlap}}
             )
 
-    # One last, real-time check against Technion's own live system - the
-    # static data/track_*.json bundle only refreshes when a developer
-    # manually reruns the pipeline, so a course closed/cancelled since then
-    # would otherwise be confidently recommended anyway. Fail-open by
-    # design (live_offering_check.py): a course is only ever dropped when
-    # POSITIVELY confirmed gone, never because the live check itself failed.
+    # One last, real-time check against Technion's own system - the static
+    # data/track_*.json bundle only refreshes on a manual pipeline rerun,
+    # so a course closed/cancelled since then would otherwise be
+    # confidently recommended anyway. Fail-open (live_offering_check.py):
+    # only dropped when POSITIVELY confirmed gone, never on check failure.
     if final_course_numbers:
         year_str, semester_str = track.target_semester.split("_")
         live_status = live_offering_check.check_still_offered(
@@ -1869,23 +1718,13 @@ def run_agent_turn_v2(
                 "it's no longer offered this semester, even though the cached course data said otherwise."
             )
 
-    # HARD mandatory-course top-up backstop: found live, a plan can pass
-    # credit/workload checks while making almost no real degree progress -
-    # 2 filler electives (orchestra, an entrepreneurship elective) got
-    # delivered instead of two ALREADY-UNLOCKED real mandatory courses,
-    # with verify_plan's own "only 1 mandatory course(s), expected at
-    # least 3" issue printed right in the explanation and delivered
-    # anyway. The earlier safety net only ever picks the best plan the
-    # model itself tried - if every attempt padded with electives instead
-    # of taking available requirements, there was nothing better to swap
-    # in. This swaps unlocked, not-yet-included mandatory courses in for
-    # the cheapest electives currently in the plan, up to the credit
-    # ceiling - mirrors verify_plan's own min_mandatory_courses logic so
-    # the two can never disagree about what's actually required here.
-    # Runs LAST (after locked-course/overlap/live-offering, same reasoning
-    # as the credit-floor top-up below) so a later drop can't reopen the
-    # shortfall this backstop just closed - each addition is
-    # collision-checked since nothing runs afterward to clean one up.
+    # HARD mandatory-course top-up backstop: a plan can pass credit/workload
+    # checks while making almost no real degree progress (filler electives
+    # instead of already-unlocked mandatory courses). Swaps unlocked,
+    # not-yet-included mandatory courses in for the cheapest electives, up
+    # to the credit ceiling - mirrors verify_plan's own min_mandatory_courses
+    # so the two never disagree. Runs LAST so a later drop can't reopen the
+    # shortfall; each addition is collision-checked.
     if final_course_numbers:
         override_minimums = state["constraints"].get("override_minimums", False)
         min_mandatory = 0 if override_minimums else tools.DEFAULT_MIN_MANDATORY_COURSES
@@ -1895,16 +1734,9 @@ def run_agent_turn_v2(
         shortfall = effective_min - len(mandatory_in_plan)
         if shortfall > 0:
             # Never re-add a course the student explicitly asked removed
-            # this turn - found live, a student who said "I already passed
-            # algebra, swap it out" had the removal immediately undone by
-            # this exact backstop re-adding the same course as "the missing
-            # mandatory requirement," because the system didn't yet know
-            # she'd passed the equivalent. Respecting the explicit removal
-            # here can leave the mandatory-choice-group issue genuinely
-            # open - correct: the student's directive outranks the
-            # heuristic's guess about what's still needed, and the open
-            # issue honestly discloses the trade-off instead of silently
-            # overriding her.
+            # this turn - the directive outranks this heuristic's guess
+            # about what's still needed; an open choice-group issue then
+            # honestly discloses the trade-off instead of overriding it.
             candidate_pool = sorted(remaining_mandatory - set(final_course_numbers) - set(requested_removals))
             still_locked = tools.prereq_unmet_in(track, candidate_pool, passed, failed) if candidate_pool else set()
             candidates = [
@@ -1960,19 +1792,14 @@ def run_agent_turn_v2(
                 tool_log.append({"name": "mandatory_topup_enforced", "args": {}, "result": {"added": added}})
 
     # HARD credit-floor top-up backstop: mirrors the mandatory top-up
-    # above, but for the credit minimum itself - found live, honoring an
-    # explicit "add X" request by dropping enough OTHER courses to fall
-    # from 17.5 to 13 credits, well under the floor, even though the
-    # prompt says never to do that. The model's own over-trimming can
-    # produce this regardless of which backstop (if any) fired, so this is
-    # checked unconditionally against the truly current total. Runs LAST,
-    # after locked-course/overlap/live-offering can all still drop a
-    # course - found live, running this earlier let a later collision-drop
-    # silently reopen a shortfall this backstop had just closed, with
-    # nothing left to catch it (18.5 credits -> drop one for a real
-    # overlap -> 15.0, under the floor, unnoticed). Each candidate is
-    # collision-checked before being added since nothing runs afterward to
-    # clean up a new overlap this backstop might introduce.
+    # above, but for the credit minimum - the model's own over-trimming
+    # (e.g. dropping enough courses to satisfy an "add X" request that it
+    # falls well under the floor) can happen regardless of which other
+    # backstop fired, so this checks unconditionally against the current
+    # total. Runs LAST, after locked-course/overlap/live-offering, so a
+    # later drop can't silently reopen a shortfall this just closed. Each
+    # candidate is collision-checked before being added since nothing runs
+    # afterward to clean up a new overlap this might introduce.
     if final_course_numbers:
         min_credits = verify_kwargs.get("min_credits", tools.DEFAULT_MIN_CREDITS)
         current_points = sum(
@@ -2005,13 +1832,11 @@ def run_agent_turn_v2(
                 )
             ]
             # Shuffle before the (stable) sort so ties on points break
-            # randomly instead of by catalog order - found live, this
-            # backstop bypasses the shuffle already applied to the model's
-            # own elective menu (_available_courses_text), so whenever it
-            # fired it silently added the exact same highest-point elective
-            # every single time regardless of that fix. Still prioritizes
-            # higher points first (fewer courses needed to close the gap),
-            # just no longer deterministic about which one among equals.
+            # randomly instead of by catalog order - this backstop bypasses
+            # the shuffle already applied to the model's own elective menu
+            # (_available_courses_text), so without this it always added
+            # the same highest-point elective. Still prioritizes higher
+            # points first (fewer courses needed to close the gap).
             random.shuffle(candidates)
             candidates.sort(key=lambda c: float(track.courses[c].get("points") or 0), reverse=True)
             topped_up = []
@@ -2036,10 +1861,9 @@ def run_agent_turn_v2(
                 tool_log.append({"name": "credit_floor_topup_enforced", "args": {}, "result": {"added": topped_up}})
 
     # Guaranteed explanation for a requested-but-unavailable course - same
-    # "guarantee survives even if a later backstop replaces the model's own
-    # prose" pattern as the locked-course explanation further below. "Not
-    # offered this semester" is a real fact nothing can override - there's
-    # no section to register for, full stop, so this never gets a
+    # "survives even if a later backstop replaces the model's own prose"
+    # pattern as the locked-course explanation below. "Not offered this
+    # semester" is a real fact nothing can override, so this never gets a
     # force-anyway offer the way a schedule/room trade-off does below.
     for unavailable_course in sorted(requested_adds_unavailable):
         if unavailable_course not in track.courses:
@@ -2054,9 +1878,8 @@ def run_agent_turn_v2(
         )
 
     # Guaranteed explanation for a requested course number that doesn't
-    # exist in the catalog at all - found via independent review, this was
-    # silently dropped with zero trace anywhere. No course name to report
-    # (it isn't in track.courses), so this names the raw number instead.
+    # exist in the catalog at all, otherwise silently dropped with zero
+    # trace. No course name to report, so this names the raw number instead.
     for unknown_course in sorted(requested_adds_unknown):
         if unknown_course in final_explanation:
             continue
@@ -2066,12 +1889,10 @@ def run_agent_turn_v2(
         )
 
     # Guaranteed explanation for a requested add that's already passed -
-    # found live, this fell silently between requested_add_courses (which
-    # excludes it, correctly, since it's not a NEW course to take) and
-    # requested_retake_course (which never fires without explicit "retake"
-    # language) - the request just vanished with no trace anywhere. Gives
-    # a concrete next step instead of silence: confirming "yes, retake it"
-    # next turn routes through the existing self-requested-retake path.
+    # falls between requested_add_courses (excludes it, correctly, since
+    # it's not new) and requested_retake_course (never fires without
+    # explicit "retake" language). Gives a concrete next step instead of
+    # silence: confirming "yes, retake it" routes through that path.
     for passed_add in sorted(requested_adds_already_passed):
         if passed_add not in track.courses:
             continue
@@ -2089,22 +1910,17 @@ def run_agent_turn_v2(
     # to honor a by-name "add X" request, but a course it force-added can
     # still get stripped by a LATER hard backstop (overlap/live-offering)
     # with a generic note that never acknowledges it was an explicit
-    # request - found live, a student asked to add a specific course FIVE
-    # TIMES across revision turns and it just kept silently vanishing with
-    # no explanation at all. Checked here against the truly final list,
-    # after every other backstop has had its say. A schedule collision or
-    # no room without dropping something else is a trade-off the STUDENT
-    # gets to decide on, not one Python or the model silently decides for
-    # them: named plainly, with a standing offer to force it in anyway that
-    # persists across exactly one turn boundary, same lifecycle as a
-    # proposed retake.
+    # request. Checked here against the truly final list, after every
+    # other backstop has had its say. A schedule collision or no room
+    # without dropping something else is a trade-off the STUDENT decides
+    # on: named plainly, with a standing force-it-in offer that persists
+    # across exactly one turn boundary, same lifecycle as a proposed retake.
     new_pending_forced_add = None
     forced_add_course = state.get("forced_add_course")
     # A plain "yes, add it anyway" confirmation reply doesn't re-name the
-    # course - extraction's requested_add_courses field only ever fires on
-    # a BY-NAME request, so a bare confirmation would otherwise never even
-    # reach this loop. The confirmed target is checked here regardless of
-    # whether it was also named again this turn.
+    # course - requested_add_courses only fires on a BY-NAME request, so a
+    # bare confirmation would otherwise never reach this loop. Checked here
+    # regardless of whether it was also named again this turn.
     adds_to_check = list(requested_adds)
     if forced_add_course and forced_add_course not in adds_to_check and forced_add_course in track.courses:
         adds_to_check.append(forced_add_course)
@@ -2145,19 +1961,14 @@ def run_agent_turn_v2(
             if new_pending_forced_add is None:
                 new_pending_forced_add = {"course_number": c, "name": name, "reason": reason_text}
 
-    # HARD "semester 1 defaults to exactly the required courses" guarantee -
-    # explicit student directive: nothing but this track's real semester-1
-    # mandatory courses, no sport/elective padding, unless the student
-    # explicitly asked for something (a named add, or a pace that signals
-    # otherwise). Verified against real data before building this: all 3
-    # tracks' semester-1 mandatory sets already land at 19.5-22 credits on
-    # their own, comfortably within the normal floor/ceiling - this never
-    # needs filler to reach the credit floor either, so "exactly these,
-    # nothing else" is always achievable, not a trade-off against it.
-    # override_minimums / a "light" pace request means the opposite of this
-    # default (fewer courses than normal) and skips it entirely rather than
-    # fighting it; a "fast" pace or a named add is read as "I want more than
-    # the bare default" and only skips the extras-stripping half.
+    # HARD "semester 1 defaults to exactly the required courses" guarantee:
+    # nothing but this track's real semester-1 mandatory courses, no sport/
+    # elective padding, unless the student asked for something explicit (a
+    # named add, or a pace that signals otherwise). All 3 tracks' semester-1
+    # mandatory sets land at 19.5-22 credits on their own, so this never
+    # needs filler to reach the credit floor. override_minimums/"light"
+    # pace skips it entirely; "fast" or a named add only skips the
+    # extras-stripping half.
     if semester_number == 1 and final_course_numbers:
         pace = state["constraints"].get("pace")
         wants_lighter = bool(state["constraints"].get("override_minimums")) or pace == "light"
@@ -2211,13 +2022,11 @@ def run_agent_turn_v2(
                         {"name": "semester1_extras_stripped", "args": {}, "result": {"removed": extras}}
                     )
 
-    # Deterministic backstop, not left to the model to remember: live
-    # testing showed the model reliably filling in deliver_plan's
-    # proposed_retake WITHOUT actually asking the matching question in the
-    # explanation prose (or vice versa) - a silent proposal the student
-    # never sees is worse than no proposal at all, since it just look like
-    # the agent's supposed to answer "yes" to nothing. If the field is set,
-    # the question WILL appear, regardless of what the model wrote.
+    # Deterministic backstop, not left to the model: it has filled in
+    # deliver_plan's proposed_retake without asking the matching question
+    # in the explanation prose (or vice versa) - a silent proposal the
+    # student never sees is worse than none. If the field is set, the
+    # question WILL appear regardless of what the model wrote.
     if new_proposed_retake and new_proposed_retake.get("course_number") not in final_course_numbers:
         retake_number = new_proposed_retake.get("course_number")
         retake_name = (
@@ -2231,12 +2040,10 @@ def run_agent_turn_v2(
     else:
         new_proposed_retake = None  # contradicted or malformed - never carry a broken proposal forward
 
-    # Deterministic backstop, same reasoning as the proposed-retake one
-    # above: the prompt TELLS the model to explain a locked-but-requested
-    # course by name, but a later backstop (final_safety_swap, mandatory
-    # top-up...) can throw away the model's own prose entirely and replace
-    # it with a synthetic one that never saw this instruction - found
-    # exactly this live, testing the locked-course path. Guarantee the
+    # Deterministic backstop, same reasoning as proposed-retake above: a
+    # later backstop (final_safety_swap, mandatory top-up...) can replace
+    # the model's own prose with a synthetic one that never saw the
+    # instruction to explain a locked-but-requested course. Guarantee the
     # explanation, don't trust it survived.
     for locked_course in sorted(requested_adds_locked or []):
         if locked_course not in track.courses:
@@ -2260,11 +2067,9 @@ def run_agent_turn_v2(
     verify_result = last_verify_result or {"pass": False, "total_credits": 0, "workload_score": 0, "issues": []}
     # The safety-net explanations above are built BEFORE the locked-course/
     # overlap/live-offering backstops below can still drop a course, so any
-    # course-count or credit figure they embed would go stale the moment one
-    # of those backstops fires afterward (found live: "7 course(s)" printed
-    # next to an explanation that had already dropped to 6). Substituted
-    # here, after every backstop has had its say, against the truly final
-    # numbers - a no-op replace when no placeholder was ever inserted.
+    # course-count/credit figure they embed would go stale if one of those
+    # backstops fires afterward. Substituted here, after every backstop has
+    # had its say - a no-op replace when no placeholder was ever inserted.
     if "{COURSE_COUNT}" in final_explanation or "{TOTAL_CREDITS}" in final_explanation or "{ISSUES_SENTENCE}" in final_explanation:
         remaining_issues = verify_result.get("issues", [])
         issues_sentence = (
@@ -2312,9 +2117,8 @@ def run_agent_turn_v2(
                 "name": track.courses[c]["name"],
                 "points": track.courses[c]["points"],
                 # A failed-course retake and an approved grade-improvement
-                # retake (an already-PASSED course, deliberately retaken) are
-                # both real retakes to the student - the RETAKE badge should
-                # show for either, not just the failed case.
+                # retake (already passed, deliberately retaken) both get
+                # the RETAKE badge, not just the failed case.
                 "is_retake": (
                     c in failed
                     or c == state.get("approved_retake_course")
@@ -2342,9 +2146,7 @@ def run_agent_turn_v2(
         "needs_input": None,
         # Echoed back by the frontend on the next request, so a follow-up
         # message is treated as feedback on THIS plan for THIS student -
-        # not a from-scratch re-derivation (the bug this fixes: a student
-        # mentioned one exam conflict and got a totally new plan, after
-        # being re-asked things they'd already answered).
+        # not a from-scratch re-derivation.
         "known_context": {
             "state": {
                 "semester_number": semester_number,
@@ -2355,24 +2157,17 @@ def run_agent_turn_v2(
                 "confirmed_grade_retakes": sorted(state.get("confirmed_grade_retakes") or []),
             },
             "previous_plan": final_course_numbers,
-            # The delivered plan's open verify issues, so the NEXT turn can
-            # deterministically detect "the student complained, and the
-            # revised plan still has the exact same problem" and push back.
+            # Lets the NEXT turn detect "still has the exact same problem"
+            # and push back.
             "previous_issues": [i["reason"] for i in verify_result.get("issues", [])],
-            # The prose explanation just delivered, so a later turn (same
-            # conversation, or a recalled cross-session profile) can answer
-            # "what did you last recommend?" directly - see previous_explanation
-            # in _system_prompt.
+            # So a later turn can answer "what did you last recommend?"
+            # directly - see previous_explanation in _system_prompt.
             "previous_explanation": plan_result.get("explanation"),
-            # A grade-improvement retake proposed THIS turn (or None) - the
-            # next turn's extraction checks this against the student's
-            # response to resolve approved_grade_retake. Deliberately
-            # replaces (never stacks with) whatever was pending before -
-            # see the plan's "resolved within one turn boundary" design.
+            # A retake proposed THIS turn (or None) - next turn's extraction
+            # checks it to resolve approved_grade_retake. Replaces, never
+            # stacks with, whatever was pending before.
             "proposed_retake": new_proposed_retake,
-            # Same single-slot, one-turn-boundary lifecycle as proposed_retake
-            # above - a forced-add offer made this turn (or None) that the
-            # next turn's extraction checks against the student's reply.
+            # Same single-slot, one-turn-boundary lifecycle as proposed_retake.
             "pending_forced_add": new_pending_forced_add,
         },
     }

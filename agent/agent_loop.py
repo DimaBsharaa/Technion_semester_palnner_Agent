@@ -1,44 +1,33 @@
 """
 The planning agent's control loop.
 
-Earlier versions gave the model a free-form tool-calling loop and trusted it
-to decide when to keep working silently vs. when to stop and ask the
-student something. In practice, across repeated testing, the model kept
-ending turns early - asking permission for the obvious next step, or asking
-the student to supply a course number instead of resolving it - no matter
-how forcefully the system prompt said not to. Prompting alone wasn't
-reliable enough, so the control flow itself is now code, not the model's
-judgment:
+Earlier versions gave the model a free-form tool-calling loop and trusted
+it to decide when to keep working vs. stop and ask the student something.
+In practice the model kept ending turns early - asking permission for the
+obvious next step - no matter how the system prompt phrased it. Prompting
+alone wasn't reliable enough, so the control flow itself is code, not the
+model's judgment:
 
-1. extract_student_state - one call, given the *entire real course catalog*
-   directly in its prompt (not a tool it might skip calling), pulls out
-   constraints and passed/failed courses and resolves any course named in
-   English/Hebrew/approximately to a real number itself. Only produces a
-   question when something genuinely blocks planning. Skipped entirely when
-   the caller already has structured form data (see build_state_from_intake) -
-   this was the single least reliable step in the whole pipeline, so a form
-   the frontend can render directly from known data removes the need for an
-   LLM to guess at it at all.
-2. draft_plan / repair_plan - proposes a course list; tools.verify_plan (pure
-   Python, no LLM) checks it; on failure, the *same kind of call* runs again
-   with the specific failure reasons, in a fixed Python loop - the model
-   never gets an open turn to ask permission mid-repair, because there is no
-   turn there, just a function call with a bounded retry count.
+1. extract_student_state - one call, given the entire real course catalog
+   directly in its prompt, pulls out constraints and passed/failed courses
+   and resolves any named course to a real number itself. Only produces a
+   question when something genuinely blocks planning. Skipped when the
+   caller already has structured form data (see build_state_from_intake).
+2. draft_plan / repair_plan - proposes a course list; tools.verify_plan
+   (pure Python, no LLM) checks it; on failure, the same kind of call runs
+   again with the specific failure reasons, in a fixed Python loop - no
+   open turn to ask permission mid-repair, just a bounded retry count.
 3. explain_plan - writes the student-facing message exactly once, after a
-   plan has passed (or repair attempts are exhausted), and is explicitly
-   told never to ask a question or offer next steps - but must be honest
-   about any unresolved hard-constraint conflict rather than glossing over
-   it, when repair attempts genuinely couldn't find a fully valid plan.
+   plan has passed (or repair attempts are exhausted), told never to ask a
+   question but to be honest about any unresolved conflict.
 
-No tool-calling API is used here at all - each step is a plain structured
-completion (JSON in, JSON or prose out), which is both more predictable and
-easier to keep within budget than an open-ended tool loop.
+No tool-calling API is used here - each step is a plain structured
+completion (JSON in, JSON or prose out), more predictable and easier to
+budget than an open-ended tool loop.
 
-Every function takes the specific Track (see data_bundle.py) a student is
-planning for as an explicit parameter, rather than reading module-level
-"the current track" state - multiple students in different tracks can be
-served by the same running process without their requests interfering with
-each other.
+Every function takes the specific Track (see data_bundle.py) as an
+explicit parameter rather than reading module-level state, so multiple
+students in different tracks can be served by the same process.
 """
 
 import json
@@ -72,9 +61,8 @@ def _load_env_file() -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        # An empty value means "unset this" - the OpenAI SDK auto-reads
-        # OPENAI_BASE_URL from the environment, and an empty string there is
-        # a broken URL, not "use the default." Removing the key is what
+        # An empty value means "unset this": an empty OPENAI_BASE_URL string
+        # is a broken URL, not "use the default" - removing the key is what
         # actually selects OpenAI's default endpoint.
         if value:
             os.environ[key] = value
@@ -85,6 +73,10 @@ def _load_env_file() -> None:
 _load_env_file()
 
 MODEL = os.environ.get("OPENAI_MODEL", "MB5R2CF-azure/gpt-5.4-mini")
+# Configured for a future semantic-search feature - not called anywhere
+# yet, since everything the agent reasons over today is structured
+# catalog/schedule data that real tools already query directly.
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "MB5R2CF-azure/text-embedding-3-small")
 BASE_URL = os.environ.get("OPENAI_BASE_URL") or None
 PRICE_INPUT_PER_1M = float(os.environ.get("OPENAI_PRICE_INPUT_PER_1M", "0.25"))
 PRICE_OUTPUT_PER_1M = float(os.environ.get("OPENAI_PRICE_OUTPUT_PER_1M", "2.00"))
@@ -97,21 +89,16 @@ _client: OpenAI | None = None
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        # Explicit per-request timeout: the SDK default is 600s, which lets a
-        # single hung connection stall an entire turn for ten minutes
-        # (observed live during test-plan execution - a turn froze >5min
-        # while /health stayed instant). 90s is generous for one completion.
-        # max_retries=4: the SDK retries 429 rate-limits with exponential
-        # backoff, and a TPM 429 observed live needed under a second of
-        # waiting - one retry wasn't always enough and surfaced as a 500.
+        # Explicit per-request timeout: the SDK default (600s) lets a single
+        # hung connection stall an entire turn; 90s is generous for one
+        # completion. max_retries=4: a TPM 429 has needed more than one
+        # retry to clear, which otherwise surfaced as a 500.
         _client = OpenAI(base_url=BASE_URL, timeout=90.0, max_retries=4)
     return _client
 
 
 # --- Per-request LLM-call trace (course-spec /api/execute "steps") ---
-# Thread-local so concurrent requests never mix traces. Each entry follows
-# the course's required schema: module name (consistent with the
-# architecture diagram), the exact prompts, and the raw response.
+# Thread-local so concurrent requests never mix traces.
 import threading as _threading
 
 _trace_local = _threading.local()
@@ -209,12 +196,9 @@ def _mandatory_text(track_id: str) -> str:
 def _foundation_text(track_id: str) -> str:
     """The mandatory list alone isn't the right basis for "what has a
     continuing student already completed" - a mandatory course can have
-    prerequisites that Technion files under a completely different category
-    (e.g. a math course under a science-elective list), and a student who
-    passed the mandatory course necessarily passed those too. Walking the
-    real prerequisite trees (not category labels) to find the full closure
-    avoids exactly the bug this caught: assuming a retake's own prereqs
-    weren't met just because they live outside the mandatory listing."""
+    prerequisites filed under a completely different category (e.g. a math
+    course under science-electives), and passing the mandatory course means
+    passing those too. Walks real prerequisite trees, not category labels."""
     track = get_track(track_id)
     closure = set(track.mandatory_course_numbers)
     frontier = list(track.mandatory_course_numbers)
@@ -228,11 +212,10 @@ def _foundation_text(track_id: str) -> str:
                 closure.add(prereq_number)
                 frontier.append(prereq_number)
 
-    # Some prerequisite courses aren't in this track's own bundle at all
-    # (they belong to a different track/faculty's requirement tree, or are
-    # older course numbers) - that's not a reason to drop them here, since
-    # the model only needs the number to reason about "would a continuing
-    # student have passed this," not a display name.
+    # Some prerequisite courses aren't in this track's own bundle (different
+    # track/faculty, or older numbers) - kept anyway since the model only
+    # needs the number to reason about "would a continuing student have
+    # passed this," not a display name.
     lines = [
         f"{c} — {track.courses[c]['name']}" if c in track.courses else f"{c} — (prerequisite course, name unavailable)"
         for c in sorted(closure)
@@ -482,11 +465,10 @@ def _normalize_state(state: dict) -> dict:
     state["semester_number"] = to_int(state.get("semester_number"), default=0)
 
     constraints = state.get("constraints") or {}
-    # None (never mentioned) and [] (explicitly no restrictions / lifted)
-    # are DIFFERENT: merge_known_state must be able to tell "unknown, keep
-    # the earlier answer" from "the student just cleared this constraint" -
-    # collapsing both to [] made relaxing a constraint impossible (found
-    # live: "Sundays are fine now" kept excluding Sundays).
+    # None (never mentioned) and [] (explicitly cleared) are DIFFERENT:
+    # merge_known_state must tell "unknown, keep the earlier answer" from
+    # "the student just cleared this constraint" - collapsing both to []
+    # made relaxing a constraint impossible.
     if constraints.get("excluded_weekdays") is None:
         constraints["excluded_weekdays"] = None
     else:
@@ -496,24 +478,18 @@ def _normalize_state(state: dict) -> dict:
     constraints["override_minimums"] = bool(constraints.get("override_minimums", False))
     state["constraints"] = constraints
 
-    # Technion course numbers are always 8 digits - the extraction model
-    # doesn't always keep leading zeros (e.g. "940219" instead of
-    # "00940219"), which would otherwise silently split one real course into
-    # two different dict/set keys everywhere downstream (prereq checks,
-    # "already passed" checks, etc.).
+    # Technion course numbers are always 8 digits - extraction doesn't
+    # always keep leading zeros, which would otherwise silently split one
+    # real course into two different dict/set keys downstream.
     state["passed_courses"] = [str(c).zfill(8) for c in (state.get("passed_courses") or [])]
     state["failed_courses"] = [str(c).zfill(8) for c in (state.get("failed_courses") or [])]
     state["remove_courses"] = [str(c).zfill(8) for c in (state.get("remove_courses") or [])]
     state["requested_add_courses"] = [str(c).zfill(8) for c in (state.get("requested_add_courses") or [])]
     state["grades"] = {str(c).zfill(8): g for c, g in (state.get("grades") or {}).items()}
-    # Deterministic backstop, not left to the extraction prompt alone: a
-    # grade recorded against a course absent from both passed/failed is
-    # inert everywhere downstream (analyze_grade_improvement_candidates
-    # only ever looks at courses already in passed_courses) - found live,
-    # a real grade silently went nowhere because the model tagged the
-    # grade to a course number it never also added to passed_courses. 55
-    # is Technion's own stated minimum passing grade (same threshold
-    # transcript_parser.py uses).
+    # Deterministic backstop: a grade recorded against a course absent from
+    # both passed/failed is inert downstream (analyze_grade_improvement_
+    # candidates only looks at passed_courses). 55 is Technion's own stated
+    # minimum passing grade (same threshold transcript_parser.py uses).
     passed_set = set(state["passed_courses"])
     failed_set = set(state["failed_courses"])
     for course_number, grade in state["grades"].items():
@@ -529,10 +505,8 @@ def _normalize_state(state: dict) -> dict:
     requested_retake = state.get("requested_retake_course")
     if requested_retake:
         requested_retake = str(requested_retake).zfill(8)
-        # A retake request implies the course was already passed - a
-        # deterministic backstop rather than trusting the model to also
-        # remember to list it in passed_courses (same "never let one field
-        # float unlinked from another" pattern as the grades backfill above).
+        # A retake request implies the course was already passed - enforced
+        # here rather than trusting the model to also list it in passed_courses.
         if requested_retake not in state["passed_courses"]:
             state["passed_courses"] = sorted(set(state["passed_courses"]) | {requested_retake})
     state["requested_retake_course"] = requested_retake or None
@@ -544,12 +518,10 @@ def _normalize_state(state: dict) -> dict:
     valid_missing = {"semester_number", "weekdays", "pace", "courses"}
     state["missing_fields"] = [f for f in (state.get("missing_fields") or []) if f in valid_missing]
 
-    # "I passed everything so far" answers the course-status question in
-    # full - backfill_passed_courses fills the actual list from the track's
-    # expected-by-now set, so re-asking via the checklist (observed live:
-    # a semester-2 student who said exactly that still got the passed/failed
-    # checklist) is pure re-asking of a settled fact. Enforced here in code
-    # rather than trusted to the extraction model's judgment.
+    # "I passed everything so far" fully answers the course-status question
+    # - backfill_passed_courses fills the actual list from the track's
+    # expected-by-now set, so re-asking via the checklist would be
+    # re-asking a settled fact. Enforced here rather than left to the model.
     state["passed_all_expected"] = bool(state.get("passed_all_expected", False))
     if state["passed_all_expected"]:
         state["missing_fields"] = [f for f in state["missing_fields"] if f != "courses"]
@@ -563,11 +535,10 @@ def _normalize_state(state: dict) -> dict:
 def merge_known_state(extracted: dict, known_state: dict) -> dict:
     """Deterministic state continuity for revision turns (a plan was already
     delivered this conversation). Extraction re-reads the whole transcript
-    every turn and - being a probabilistic call - can come back LESS sure
-    than the previous turn, up to re-asking the student things they already
-    answered (observed live: a student pointing out an exam conflict got
-    re-asked which courses they'd passed). The carry-forward instruction in
-    the extraction prompt alone is not a guarantee; this merge is.
+    every turn and - being probabilistic - can come back LESS sure than the
+    previous turn, up to re-asking things the student already answered. The
+    carry-forward instruction in the extraction prompt alone is not a
+    guarantee; this merge is.
 
     Rules, in code, not prompt:
     - A settled fact can be refined by the new message, never un-known:
@@ -611,10 +582,8 @@ def merge_known_state(extracted: dict, known_state: dict) -> dict:
     merged["passed_courses"] = sorted(passed)
     merged["failed_courses"] = sorted(failed)
 
-    # Grades never come from LLM extraction (it doesn't produce this field),
-    # so this is really "carry the earlier-known grades forward, let this
-    # turn's intake grades (if any, e.g. a fresh transcript upload) win on
-    # a conflict" - same newest-explicit-wins rule as everything else here.
+    # Grades never come from LLM extraction - carry earlier-known grades
+    # forward, let this turn's intake grades (if any) win on conflict.
     merged["grades"] = {**(known_state.get("grades") or {}), **(merged.get("grades") or {})}
 
     merged["missing_fields"] = []
@@ -641,10 +610,8 @@ def build_state_from_intake(intake: dict) -> dict:
         },
         "passed_courses": intake.get("passed_courses", []),
         "failed_courses": intake.get("failed_courses", []),
-        # Per-course numeric grade, e.g. from an uploaded transcript
-        # (transcript_parser.py) - optional, not used by any planning logic
-        # today, just carried forward so it survives into known_context and
-        # gets recalled on a later conversation instead of being re-typed.
+        # Per-course numeric grade, e.g. from an uploaded transcript -
+        # carried forward into known_context to survive across turns.
         "grades": intake.get("grades", {}),
         "ready_to_plan": True,
         "clarifying_question": None,
@@ -688,14 +655,10 @@ def answer_course_question(
     Also handles a second kind of question this same intent bucket catches:
     "what did you recommend last time?" / "why did you pick X?" - a student
     asking about a PRIOR turn's advice, not a specific course's reviews.
-    Without previous_explanation this function had no way to answer that
-    honestly and would fabricate track-level review stats instead (caught
-    live: asked "what did you recommend last time" with no course named, it
-    invented "80 reviews, 4.6/5" numbers that don't correspond to anything
-    real). previous_explanation - the prose from the last delivered plan,
-    whether from earlier this conversation or a recalled cross-session
-    profile - is threaded in here so the model answers from what it
-    actually said instead of guessing."""
+    Without previous_explanation this function has no way to answer that
+    honestly and would fabricate track-level review stats instead.
+    previous_explanation (the prose from the last delivered plan) is
+    threaded in here so the model answers from what it actually said."""
     previous_explanation = (known_context or {}).get("previous_explanation")
     course_numbers = [c for c in state.get("question_courses", []) if c in track.courses]
     grades = state.get("grades") or {}
@@ -717,16 +680,10 @@ def answer_course_question(
             "exam_moed_a": exams[0]["date"] if exams else None,
             "mandatory": c in track.mandatory_course_numbers,
         }
-        # Found live: a student who'd already uploaded a transcript (so
-        # their grade WAS known in state) asked "do you recommend retaking
-        # it" and got told "I can't see your grade" - this function used to
-        # never look at state["grades"] or grade_stats at all, only
-        # CheeseFork sentiment, even though both were sitting right there.
         # Same two-baseline comparison analyze_grade_improvement_candidates
-        # gives the planning loop, just for a direct question instead of a
-        # plan turn - grade data is opportunistic, so both stay null/absent
-        # when genuinely unknown rather than prompting the model to ask for
-        # them.
+        # gives the planning loop, for a direct question instead of a plan
+        # turn - grade data is opportunistic, so both stay null when
+        # genuinely unknown rather than prompting the model to ask.
         if c in grades:
             block["your_grade"] = grades[c]
             block["your_own_average_across_known_grades"] = your_own_average
@@ -784,34 +741,26 @@ Student's question: {last_user.get("content", "")}""",
 
 def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[str]]:
     """Deterministically fills in passed_courses rather than trusting the
-    model to apply "everything except the named failure" correctly every
-    time - it's a probabilistic call and has under-included prerequisite
-    courses (like a retake's own prereqs living outside the mandatory list)
-    in testing even with an explicit instruction to include them. Anything
-    this track's own depth heuristic already expects a student at this
-    semester to have finished (see assess_progress) gets added here in
-    code, transitively through its own prerequisites, unless the student
-    explicitly named it as failed/outstanding.
+    model to apply "everything except the named failure" correctly - it has
+    under-included prerequisite courses even with an explicit instruction
+    to include them. Anything this track's depth heuristic expects a
+    student at this semester to have finished (see assess_progress) gets
+    added here in code, transitively, unless explicitly named as failed.
 
     Shared by both the pipeline (run_agent_turn) and the agent loop
-    (agent_react_loop.run_agent_turn_v2) so a fix here - like the
-    passed/failed contradiction bug found via live testing - applies to
-    both rather than needing to be duplicated and kept in sync."""
+    (agent_react_loop.run_agent_turn_v2) so a fix here applies to both."""
     failed = set(state["failed_courses"])
     semester_number = state.get("semester_number") or 0
-    # Same signal as tools.assess_progress - kept identical deliberately so
-    # the two never contradict each other in the same response (progress
-    # display vs. what's actually excluded from the plan): official DDS
-    # diagram data (track.official_semester) wins per-course whenever it's
-    # known, the prerequisite-depth heuristic only fills in the rest. See
-    # tools._expected_by_now / tools.EXPECTED_BY_NOW_BUFFER.
+    # Same signal as tools.assess_progress, kept identical so the two never
+    # contradict each other: official DDS diagram data
+    # (track.official_semester) wins per-course whenever known, the
+    # prerequisite-depth heuristic only fills in the rest.
     expected_by_now = {
         c for c, d in track.mandatory_prereq_depths.items() if tools._expected_by_now(track, c, d, semester_number)
     } - failed
     # Choose-one-variant requirements due by now: mark ALL variants passed
-    # (we can't know which one the student took, and later prerequisites
-    # accept any variant of the group), unless the student explicitly named
-    # one as failed.
+    # (can't know which one was taken; later prereqs accept any variant),
+    # unless the student explicitly named one as failed.
     for group in track.mandatory_choice_groups:
         options = set(group["options"])
         if group["depth"] <= semester_number - tools.EXPECTED_BY_NOW_BUFFER and not (options & failed):
@@ -822,20 +771,14 @@ def backfill_passed_courses(track: Track, state: dict) -> tuple[list[str], list[
             auto_passed.update(collect_prereq_courses(track.courses[c]["prerequisites"]))
     # A course pulled in only as someone ELSE's transitive prerequisite must
     # never override real official DDS-diagram placement that says it comes
-    # LATER than the student's own semester - found live: an untagged
-    # course (no official_semester - the depth heuristic is its only
-    # signal) had a REAL, later-semester course as one of ITS OWN
-    # prerequisites, and the sweep above blindly auto-passed it anyway.
-    # depth is only ever a fallback signal; official_semester data, once it
-    # exists for a course, is the real answer and wins here too.
+    # LATER than the student's own semester - depth is only a fallback
+    # signal; official_semester data, where it exists, is the real answer.
     auto_passed = {
         c for c in auto_passed if track.official_semester.get(c, -1) < semester_number
     }
     # A course walked in as someone ELSE's transitive prerequisite must never
-    # override an explicit failure - without this subtraction, a failed
-    # course that's also a foundation for other mandatory courses gets
-    # silently re-added as "passed," producing a plan that's simultaneously
-    # a retake and "already passed."
+    # override an explicit failure - otherwise a failed course that's also
+    # a foundation for others gets silently re-added as "passed."
     passed = sorted((set(state["passed_courses"]) | auto_passed) - failed)
     return passed, sorted(failed)
 
@@ -854,24 +797,18 @@ def resolve_verify_kwargs(state: dict) -> dict:
     else:
         kwargs = {"min_credits": tools.DEFAULT_MIN_CREDITS, "max_credits": tools.DEFAULT_MAX_CREDITS}
     # The one narrow exception to "never re-include a passed course" -
-    # flows into every verify_plan call (model-callable tool AND the
-    # post-loop backstop) via this shared kwargs dict, so it needs no
-    # separate threading anywhere else. See tools.verify_plan's docstring.
+    # flows into every verify_plan call via this shared kwargs dict. See
+    # tools.verify_plan's docstring.
     if state.get("approved_retake_course"):
         kwargs["approved_retake_course"] = state["approved_retake_course"]
-    # Every grade-improvement retake ever confirmed in this conversation,
-    # not just one just approved THIS turn - found live, approved_retake_course
-    # resets to None every turn by design (see agent_react_loop.py), so on
-    # ANY later turn (even one totally unrelated to the retake) this
-    # exemption alone made verify_plan/check_invariants treat an already-
-    # accepted retake as "plan re-includes an already-passed course" and
-    # Python actively stripped it back out - a retake the student explicitly
-    # confirmed could only ever survive exactly one turn. This persists for
-    # the rest of the conversation instead, same as passed/failed_courses.
+    # Every grade-improvement retake ever confirmed this conversation, not
+    # just one approved THIS turn: approved_retake_course resets to None
+    # every turn by design, so without this persisting, verify_plan/
+    # check_invariants would strip an already-accepted retake back out on
+    # any later turn. Persists like passed/failed_courses.
     kwargs["confirmed_grade_retakes"] = state.get("confirmed_grade_retakes") or set()
-    # Retakes are exempt from verify_plan's prereq check (their prereqs
-    # were met the first time around) - see verify_plan's docstring. Always
-    # included, unconditionally, unlike approved_retake_course above.
+    # Retakes are exempt from verify_plan's prereq check (met the first
+    # time around) - always included, unlike approved_retake_course above.
     kwargs["failed_courses"] = state.get("failed_courses") or []
     return kwargs
 
@@ -904,11 +841,9 @@ def _draft_or_repair_plan(
     delivered_plan: list[str] | None = None,
 ) -> tuple[list[str], str, str, float]:
     # delivered_plan is the plan the student ALREADY RECEIVED in an earlier
-    # turn of this conversation - a completely different thing from
-    # previous_plan (this turn's own failed repair attempt). When present,
-    # the student's latest message is feedback on an existing plan, and the
-    # right behavior is a minimal revision of it, not a fresh draft that
-    # forgets everything they were already shown.
+    # turn - different from previous_plan (this turn's own failed repair
+    # attempt). When present, the right behavior is a minimal revision of
+    # it, not a fresh draft that forgets what they were already shown.
     revision_note = ""
     if delivered_plan:
         revision_note = f"""
@@ -1036,14 +971,12 @@ Respond with ONLY a JSON object: {{"course_numbers": ["...", ...], \
 
 def _choose_best_plan(track: Track, state: dict, comparison: list[dict]) -> tuple[str, str, float]:
     """A genuine judgment-under-alternatives call: given two already-verified
-    candidate plans and their objective metrics (computed by
-    tools.compare_plans, not by this model), pick which one actually serves
-    this specific student better and say why - a fixed formula could rank
-    them, but "why" often depends on things a formula can't weigh, like
-    whether the student's own phrasing suggested they're stretched thin this
-    semester. Kept as its own structured decision, separate from the prose
-    explanation, so it's a distinct visible choice rather than something
-    baked silently into the final write-up."""
+    candidate plans and their objective metrics (from tools.compare_plans,
+    not this model), pick which one actually serves this student better and
+    say why - a fixed formula could rank them, but "why" depends on things
+    like whether the student's phrasing suggested they're stretched thin.
+    Kept as its own structured decision, separate from the prose
+    explanation, so it's a distinct visible choice."""
     system = {
         "role": "system",
         "content": f"""\
@@ -1156,13 +1089,10 @@ def run_agent_turn(
     caller already has structured, validated intake data (a form
     submission) rather than free text to interpret.
 
-    known_context carries forward what an EARLIER turn in this same
-    conversation already resolved ({"state": {...}, "previous_plan": [...]})
-    - without it, a free-text follow-up ("I have an exam conflict on
-    23.2") has no way to know it's a change request against an existing
-    plan rather than a brand new drafting task, and extraction has to
-    re-derive passed/failed from scratch every turn instead of treating
-    it as already-settled fact."""
+    known_context carries forward what an EARLIER turn already resolved
+    ({"state": {...}, "previous_plan": [...]}) - without it, a free-text
+    follow-up has no way to know it's a change request against an existing
+    plan rather than a brand new drafting task."""
     track = get_track(track_id)
     tool_log = []
     cost = cost_so_far
@@ -1192,10 +1122,8 @@ def run_agent_turn(
             "tool_log": tool_log,
             "stopped_reason": "done",
             "plan_result": None,
-            # Whatever was already figured out from free text, so the
-            # frontend only needs to show button widgets for genuine gaps
-            # (missing_fields) rather than re-asking everything - talking
-            # first should mean less clicking after, not more.
+            # Frontend shows button widgets only for genuine gaps
+            # (missing_fields), not re-asking everything already extracted.
             "needs_input": {
                 "missing_fields": state.get("missing_fields", []),
                 "semester_number": state.get("semester_number"),
@@ -1226,12 +1154,10 @@ def run_agent_turn(
     verify_kwargs = resolve_verify_kwargs(state)
     pace = state["constraints"].get("pace")
 
-    # First diagnostic step, same as a human advisor: how does this student's
-    # actual progress compare to a typical student at this point in the
-    # track? This shapes urgency (a "slightly behind" semester-4 student
-    # planning around one recent gap reads differently than someone with a
-    # long-accumulated backlog), even though it doesn't gate planning the
-    # way missing pass/fail data does.
+    # First diagnostic step, same as a human advisor: how does this
+    # student's progress compare to a typical student at this point? Shapes
+    # urgency in the explanation, though it doesn't gate planning the way
+    # missing pass/fail data does.
     progress = tools.assess_progress(track, semester_number, passed)
     tool_log.append(
         {"name": "assess_progress", "args": {"semester_number": semester_number}, "result": progress}
@@ -1252,12 +1178,9 @@ def run_agent_turn(
             stopped_reason = "budget_cap"
             break
 
-        # accept_tradeoff is only offered once the model has made at least
-        # two real repair attempts - it can voluntarily end its own loop
-        # early, but only after genuinely trying, not as a first resort.
-        # Python still owns both the floor and the ceiling here; the model
-        # only ever gets to shorten the loop, never lengthen it past
-        # MAX_REPAIR_ATTEMPTS.
+        # accept_tradeoff is only offered after at least two real repair
+        # attempts - the model can end its own loop early, but only after
+        # genuinely trying. Python still owns the ceiling (MAX_REPAIR_ATTEMPTS).
         allow_accept_tradeoff = attempt >= 2
         plan, repair_strategy, repair_reasoning, c = _draft_or_repair_plan(
             track,
@@ -1303,15 +1226,14 @@ def run_agent_turn(
 
     # A genuine judgment-under-alternatives step, not just more repair: once
     # the primary plan has settled, draft one deliberately different-biased
-    # alternative (lighter if the primary leaned normal/fast, more ambitious
-    # if the primary was already light), score both on the same objective
-    # metrics, and let a dedicated model call pick a winner with reasoning -
-    # rather than Python silently keeping whichever came first.
+    # alternative, score both the same way, and let a dedicated model call
+    # pick a winner with reasoning - rather than Python silently keeping
+    # whichever came first.
     alternative_note = None
-    # Skipped on revision turns (previous_plan set): when the student is
-    # giving feedback on a plan they already have, continuity beats
-    # exploring a differently-biased alternative - swapping their whole
-    # plan out from under them is exactly the failure being fixed here.
+    # Skipped on revision turns (previous_plan set): continuity beats
+    # exploring an alternative when the student is giving feedback on a
+    # plan they already have - swapping the whole plan out from under them
+    # would defeat the point of a revision.
     if plan and (cost - cost_so_far) < SESSION_BUDGET_USD_CAP and not previous_plan:
         bias = "lighter-workload" if pace != "light" else "faster-progress, even if heavier"
         alt_plan, _, _, c = _draft_or_repair_plan(
@@ -1350,12 +1272,11 @@ def run_agent_turn(
                 else:
                     alternative_note = f"a {bias} alternative was considered and not chosen: {reasoning}"
 
-    # Deterministic backstop, independent of whatever the drafting model
-    # claims about its own plan: a course flagged both a retake and
-    # "already passed" is a data-integrity bug, not a trade-off, so it's
-    # corrected here in code rather than left for the model to notice on a
-    # 6th attempt it doesn't get. This runs regardless of which attempt
-    # produced the final plan (including the alternative, if it won).
+    # Deterministic backstop, independent of the drafting model's own
+    # claims: a course flagged both a retake and "already passed" is a
+    # data-integrity bug, corrected here in code rather than left for the
+    # model to notice. Runs regardless of which attempt produced the final
+    # plan (including the alternative, if it won).
     violations = tools.check_invariants(track, plan, passed, failed)
     if violations:
         tool_log.append({"name": "check_invariants", "args": {}, "result": {"violations": violations}})
@@ -1405,11 +1326,9 @@ def run_agent_turn(
         "stopped_reason": stopped_reason,
         "plan_result": plan_result,
         "needs_input": None,
-        # The resolved facts and delivered plan, for the frontend to echo
-        # back on the next request - so a follow-up like "I have a wedding
-        # on an exam date" is treated as a revision of THIS plan against
-        # THIS student state, instead of re-deriving everything from raw
-        # text and drafting a stranger's plan from scratch.
+        # The resolved facts and delivered plan, echoed back by the
+        # frontend on the next request so a follow-up is treated as a
+        # revision of THIS plan, not a from-scratch re-derivation.
         "known_context": {
             "state": {
                 "semester_number": semester_number,

@@ -31,10 +31,9 @@ DEFAULT_MIN_MANDATORY_COURSES = 3  # a semester carrying only 1-2 mandatory cour
 
 # How many semesters of buffer beyond a course's prereq depth before it's
 # assumed already completed (assess_progress / backfill_passed_courses).
-# Was 2 - live testing found real semester-3+ mandatory courses sitting at
-# depth 1 (shallow prereq chain, but NOT actually an early-semester course
-# in Technion's real curriculum), silently excluded from every plan as a
-# result. See assess_progress's docstring for the full evidence.
+# Was 2 - real semester-3+ mandatory courses can sit at depth 1 (shallow
+# prereq chain but not actually early-semester), silently excluded
+# otherwise. See assess_progress's docstring for the full evidence.
 EXPECTED_BY_NOW_BUFFER = 3
 
 # CheeseFork's difficultyRank is 1-5; bucket boundaries for summarize_cheesefork.
@@ -107,19 +106,14 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
     student's actual completion compare to a normal student at this point
     in the track?
 
-    "depth" is a PREREQUISITE-GRAPH property (how many prerequisite hops
-    deep a course sits), not a real semester-sequence number - it's a
-    proxy, and a confirmed-wrong one at the old N-2 cutoff: live testing
-    found real semester-3-and-later mandatory courses (Software
-    Engineering, DB Management, Deterministic Models, the Economics
-    requirement) sitting at depth 1, meaning they'd be silently assumed
-    ALREADY DONE by semester 3 under the old formula - a shallow
-    prerequisite chain does not mean Technion's real curriculum schedules
-    a course that early; pacing/credit-balancing spreads mandatory courses
-    across many semesters independent of how few prerequisites they need.
-    EXPECTED_BY_NOW_BUFFER widens that gap - still an approximation, now
-    used only where track.official_semester (Technion's own DDS diagram,
-    digitized by hand - see data_bundle.py) doesn't cover a course yet.
+    "depth" is a PREREQUISITE-GRAPH property (prerequisite hops deep), not
+    a real semester-sequence number - a shallow chain doesn't mean Technion
+    schedules a course early, since pacing/credit-balancing spreads
+    mandatory courses independent of prereq depth (e.g. real semester-3+
+    courses like Software Engineering or DB Management can sit at depth 1).
+    EXPECTED_BY_NOW_BUFFER widens that gap - still an approximation, used
+    only where track.official_semester (Technion's own DDS diagram, see
+    data_bundle.py) doesn't cover a course yet.
     """
     passed = set(passed_courses)
     depths = track.mandatory_prereq_depths
@@ -159,22 +153,19 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
 def get_intake_options(track: Track) -> dict:
     """Static, deterministic data for a structured intake form, instead of
     asking the student to type free text for things that are really just a
-    fixed choice. The mandatory course list in particular is the same set
-    every time - there's no reason to make an LLM re-derive names and
-    numbers from a student's typed description of them, the single biggest
-    source of unreliable behavior seen in this build. depth is included per
-    course so a frontend can pre-check "probably passed" vs "probably not
-    reached yet" once the student picks a semester number, the same
-    heuristic assess_progress and the drafting step already use."""
+    fixed choice - the mandatory course list is the same set every time, so
+    there's no reason to make an LLM re-derive names and numbers from a
+    typed description. depth is included per course so a frontend can
+    pre-check "probably passed" once the student picks a semester number,
+    the same heuristic assess_progress and drafting already use."""
     mandatory = [
         {
             "course_number": c,
             "name": track.courses[c]["name"],
             "depth": track.mandatory_prereq_depths.get(c, 0),
-            # Real Technion DDS-diagram placement, where known - lets a
-            # frontend filter/sort by actual semester instead of the
-            # prerequisite-depth proxy. null when not yet digitized for
-            # this course.
+            # Real DDS-diagram placement, where known - lets a frontend
+            # sort by actual semester instead of the depth proxy. null
+            # when not yet digitized for this course.
             "official_semester": track.official_semester.get(c),
         }
         for c in sorted(track.mandatory_course_numbers)
@@ -182,13 +173,9 @@ def get_intake_options(track: Track) -> dict:
     ]
     # Choose-one-variant requirements appear as ONE row each (the student
     # answers for the group; the first option stands in as its id) - UNLESS
-    # one specific variant is already individually listed above, which
-    # happens whenever official_semester (or the tree walk) tags one exact
-    # option as required on its own. Found live: a student saw BOTH
-    # "אלגברה 1מ2" on its own row AND "אלגברה 1/מורחב / אלגברה 1מ2 (אחת
-    # מהאפשרויות)" as a second row - two questions for one real
-    # requirement, since the diagram already tells us specifically which
-    # variant applies, no "pick one" ambiguity is left to ask about.
+    # one specific variant is already individually listed above (tagged by
+    # official_semester or the tree walk as required on its own), which
+    # would otherwise ask the same real requirement as two questions.
     for group in track.mandatory_choice_groups:
         if any(o in track.mandatory_course_numbers for o in group["options"]):
             continue
@@ -210,12 +197,9 @@ def get_intake_options(track: Track) -> dict:
         "mandatory_courses": mandatory,
         "weekdays": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         "pace_options": ["light", "normal", "fast"],
-        # The frontend's own "expected done by now" checklist filter must
-        # use this SAME number, not a hardcoded copy of its own - found
-        # live: EXPECTED_BY_NOW_BUFFER was recalibrated from 2 to 3 here,
-        # but a second, independent "- 2" hardcoded in site/index.html was
-        # never updated, so the checklist silently drifted out of sync with
-        # what assess_progress/backfill_passed_courses actually use.
+        # The frontend's "expected done by now" checklist filter must use
+        # this SAME number, not a hardcoded copy - a separate hardcoded
+        # buffer there previously drifted out of sync with this value.
         "expected_by_now_buffer": EXPECTED_BY_NOW_BUFFER,
     }
 
@@ -412,22 +396,15 @@ def analyze_grade_improvement_candidates(track: Track, passed_courses: list[str]
     return out
 
 
-# The old difficulty_component scaled linearly from 0, treating "average
-# CheeseFork difficulty 0" as the baseline for "no workload contribution" -
-# but 0 never happens in practice. Found live: a real, ordinary
-# mandatory-heavy semester (5 real courses, 20 credits, avg difficulty
-# 3.86 - completely typical for Technion engineering core courses) scored
-# 90.9, ALWAYS over the DEFAULT_WORKLOAD_CAP=80 cap. That meant nearly
-# every legitimate mandatory-heavy semester tripped "workload exceeds cap"
-# by default, which pressured the model to drop courses to get under it -
-# and since dropping the HARDEST course reduces the score fastest, it kept
-# dropping mandatory courses (the harder ones) instead of light electives.
-# _DIFFICULTY_BASELINE (empirically measured: mean CheeseFork difficulty
-# across this catalog is ~2.44, mandatory-only courses average ~3.11) is
-# the new "zero contribution" point instead of 0 - an average difficulty
-# around the catalog's own typical range no longer eats most of the
-# budget, and only a GENUINELY heavy combination (multiple courses well
-# above typical) pushes the score toward the cap.
+# The old difficulty_component scaled linearly from 0 ("difficulty 0" as
+# the no-workload baseline), but 0 never happens in practice: a typical
+# mandatory-heavy semester (avg difficulty ~3.86) scored 90.9, ALWAYS over
+# DEFAULT_WORKLOAD_CAP=80 - which pressured the model to drop courses to
+# get under it, and since dropping the HARDEST course cuts the score
+# fastest, it kept dropping mandatory courses instead of light electives.
+# _DIFFICULTY_BASELINE (mean CheeseFork difficulty across this catalog is
+# ~2.44, mandatory-only ~3.11) is the new "zero contribution" point instead
+# of 0, so only a GENUINELY heavy combination pushes toward the cap.
 _DIFFICULTY_BASELINE = 2.4
 _DIFFICULTY_CEILING = 5.0
 
@@ -637,9 +614,8 @@ def risk_report(
                 }
             )
 
-    # Moed B crunches (advisory): moed B dates are fixed by the Technion,
-    # so tight gaps are often unavoidable - but a student who lands in two
-    # moed B exams a day apart deserves to know before it happens.
+    # Moed B crunches (advisory): dates are fixed by Technion so gaps are
+    # often unavoidable, but a student a day apart deserves to know.
     b_dates = []
     for c in plan_course_numbers:
         if c not in track.courses:
@@ -1119,10 +1095,8 @@ def verify_plan(
 
     # Coordinated section check for the WHOLE plan at once: sections are
     # chosen to dodge excluded days AND each other, so only genuinely
-    # irreducible problems become issues. This is what catches "two
-    # lectures stacked on Tuesday 11:30" - a real delivered-plan defect
-    # that was previously invisible because time collisions were never
-    # checked anywhere.
+    # irreducible problems become issues - catches real time collisions
+    # (e.g. two lectures stacked on the same slot) across the whole week.
     section_plan = choose_sections(track, plan_course_numbers, list(excluded_weekdays))
     for hit in section_plan["excluded_day_hits"]:
         issues.append(
@@ -1168,12 +1142,10 @@ def verify_plan(
         )
 
     # Choose-one-variant requirements (calculus / algebra / probability...):
-    # a group the student could take RIGHT NOW (a variant is offered and its
-    # prerequisites are met) but hasn't passed and isn't taking is a real
-    # gap - these are the gateway courses that block half the degree, and
-    # skipping them is exactly the failure seen live (a semester-1 plan
-    # without infi or algebra). Skipped when the student explicitly asked
-    # for a minimal load (min_mandatory_courses == 0).
+    # a group the student could take RIGHT NOW (offered, prereqs met) but
+    # hasn't passed and isn't taking is a real gap - these are gateway
+    # courses that block half the degree. Skipped when the student
+    # explicitly asked for a minimal load (min_mandatory_courses == 0).
     if min_mandatory_courses > 0:
         plan_set = set(plan_course_numbers)
         for group in track.mandatory_choice_groups:

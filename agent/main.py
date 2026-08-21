@@ -94,17 +94,15 @@ SITE_INDEX = _HERE.parent / "site" / "index.html"
 ARCH_PNG = _HERE / "static" / "architecture.png"
 
 # Bump this string on every architecturally-significant change, so a stale
-# running process is immediately obvious from GET /health instead of being
-# diagnosed after the fact from file timestamps.
+# running process is immediately obvious from GET /health.
 AGENT_VERSION = "schedule-intelligence-v1-2026-07-21"
 
 # "pipeline" = agent_loop.run_agent_turn (hardcoded draft/verify/repair/
-# compare/explain stages) - kept available as a fallback, not removed.
-# "react" = agent_react_loop.run_agent_turn_v2 (the model picks its own tool
-# sequence, ending in a terminal deliver_plan call) - now the default after
-# Stage 2 validation (regression suite + live adversarial testing) showed no
-# reliability regressions. Both share the identical /chat response
-# contract, so the frontend needed zero changes either way.
+# compare/explain stages) - kept available as a fallback. "react" =
+# agent_react_loop.run_agent_turn_v2 (model picks its own tool sequence,
+# ending in a terminal deliver_plan call) - the default after Stage 2
+# validation showed no reliability regressions. Both share the identical
+# /chat response contract, so the frontend needed zero changes either way.
 AGENT_MODE_DEFAULT = os.environ.get("AGENT_MODE", "react")
 AGENT_IMPLEMENTATIONS = {"pipeline": run_agent_turn, "react": run_agent_turn_v2}
 
@@ -130,18 +128,16 @@ class ChatRequest(BaseModel):
     # Optional per-request override of AGENT_MODE, for side-by-side testing
     # without restarting the server. Omit to use the server's default.
     agent_mode: str | None = None
-    # Echo of the previous response's known_context field (resolved student
-    # state + the plan already delivered). The caller keeps it, same as
-    # messages - there's no server-side session store. When present, a
-    # follow-up message is treated as a revision of the existing plan
-    # rather than a from-scratch request.
+    # Echo of the previous response's known_context field (resolved state +
+    # delivered plan). The caller keeps it - there's no server-side session
+    # store. When present, a follow-up is treated as a revision rather than
+    # a from-scratch request.
     known_context: dict | None = None
     # Optional: SHA-256 hex digest of the student's email, computed
-    # CLIENT-SIDE (the server never sees the raw email - see
-    # site/index.html's sha256hex + student_store.py). When present, this
-    # turn's resolved state is also saved to Supabase so GET /session can
-    # restore it on a different browser/device. Purely additive: omit it
-    # and behavior is identical to before this existed.
+    # CLIENT-SIDE (server never sees the raw email - see site/index.html's
+    # sha256hex + student_store.py). When present, this turn's resolved
+    # state is also saved to Supabase so GET /session can restore it on a
+    # different device. Purely additive: omit it and behavior is unchanged.
     student_key: str | None = None
 
 
@@ -295,11 +291,9 @@ def chat(request: ChatRequest):
         _persist_session(request.track_id, request.student_key, result)
         return result
     except Exception as e:
-        # The traceback is genuinely useful for local debugging, but must
-        # never reach an arbitrary caller of a deployed, public endpoint.
-        # Vercel sets VERCEL=1 in every deployed environment (local `uvicorn`
-        # runs never have it), so this stays convenient locally and safe in
-        # production with no manual flag to remember to flip.
+        # The traceback is useful for local debugging but must never reach
+        # a caller of a deployed, public endpoint. Vercel sets VERCEL=1 in
+        # every deployed environment, so this needs no manual flag.
         content = {"error": str(e)}
         if not os.environ.get("VERCEL"):
             import traceback
