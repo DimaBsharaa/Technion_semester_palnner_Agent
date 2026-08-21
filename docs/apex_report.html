@@ -77,7 +77,6 @@
     <h1>APEX Semester Planning Agent</h1>
     <p class="muted">Project report</p>
     <p>Live demo: https://technion-semester-palnner-agent.vercel.app</p>
-    <p>Team APEX (batch 2_5): Manhal Ghoummaid, Dima Bshara, Diyar Husayyan</p>
   </div>
 
   <h2>Project Summary</h2>
@@ -159,7 +158,7 @@
   <table>
     <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
     <tbody>
-      <tr><td><code>GET /api/team_info</code></td><td>Returns group number, team name, and students.</td></tr>
+      <tr><td><code>GET /api/team_info</code></td><td>Returns the required team metadata for the assignment.</td></tr>
       <tr><td><code>GET /api/agent_info</code></td><td>Returns description, purpose, prompt template, examples, and steps.</td></tr>
       <tr><td><code>GET /api/model_architecture</code></td><td>Returns the architecture diagram as PNG.</td></tr>
       <tr><td><code>POST /api/execute</code></td><td>Runs a one-shot prompt and returns <code>status</code>, <code>error</code>, <code>response</code>, and <code>steps</code>.</td></tr>
