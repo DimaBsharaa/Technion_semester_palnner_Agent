@@ -1,33 +1,7 @@
-"""
-The planning agent's control loop.
+"""Original deterministic planning loop.
 
-Earlier versions gave the model a free-form tool-calling loop and trusted
-it to decide when to keep working vs. stop and ask the student something.
-In practice the model kept ending turns early - asking permission for the
-obvious next step - no matter how the system prompt phrased it. Prompting
-alone wasn't reliable enough, so the control flow itself is code, not the
-model's judgment:
-
-1. extract_student_state - one call, given the entire real course catalog
-   directly in its prompt, pulls out constraints and passed/failed courses
-   and resolves any named course to a real number itself. Only produces a
-   question when something genuinely blocks planning. Skipped when the
-   caller already has structured form data (see build_state_from_intake).
-2. draft_plan / repair_plan - proposes a course list; tools.verify_plan
-   (pure Python, no LLM) checks it; on failure, the same kind of call runs
-   again with the specific failure reasons, in a fixed Python loop - no
-   open turn to ask permission mid-repair, just a bounded retry count.
-3. explain_plan - writes the student-facing message exactly once, after a
-   plan has passed (or repair attempts are exhausted), told never to ask a
-   question but to be honest about any unresolved conflict.
-
-No tool-calling API is used here - each step is a plain structured
-completion (JSON in, JSON or prose out), more predictable and easier to
-budget than an open-ended tool loop.
-
-Every function takes the specific Track (see data_bundle.py) as an
-explicit parameter rather than reading module-level state, so multiple
-students in different tracks can be served by the same process.
+This module keeps the fixed extract, draft, verify, repair, explain flow.
+The newer ReAct loop lives in agent_react_loop.py.
 """
 
 import json
@@ -43,14 +17,7 @@ from prereq_parser import collect_prereq_courses
 
 
 def _load_env_file() -> None:
-    """Zero-dependency loader for an `agent/.env` file, so the API key,
-    model, and pricing can live in one gitignored file instead of being
-    exported by hand in every shell (and so test scripts run via `python3`
-    pick them up without a wrapper). Lines are KEY=VALUE; blank lines and
-    `#` comments are ignored. .env WINS over any pre-existing environment
-    variable - this is deliberate: a leftover OPENAI_BASE_URL from an
-    earlier proxy session in the running server's environment must not
-    silently override the file that is now the single source of truth."""
+    """Load KEY=VALUE pairs from agent/.env."""
     env_path = Path(__file__).with_name(".env")
     if not env_path.exists():
         return
@@ -61,9 +28,7 @@ def _load_env_file() -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        # An empty value means "unset this": an empty OPENAI_BASE_URL string
-        # is a broken URL, not "use the default" - removing the key is what
-        # actually selects OpenAI's default endpoint.
+        # Empty value means unset, which restores SDK defaults.
         if value:
             os.environ[key] = value
         else:
@@ -89,16 +54,12 @@ _client: OpenAI | None = None
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        # Explicit per-request timeout: the SDK default (600s) lets a single
-        # hung connection stall an entire turn; 90s is generous for one
-        # completion. max_retries=4: a TPM 429 has needed more than one
-        # retry to clear, which otherwise surfaced as a 500.
+        # Keep one slow model call from stalling the whole turn.
         _client = OpenAI(base_url=BASE_URL, timeout=90.0, max_retries=4)
     return _client
 
 
-# --- Per-request LLM-call trace (course-spec /api/execute "steps") ---
-# Thread-local so concurrent requests never mix traces.
+# Per-request LLM-call trace for /api/execute.
 import threading as _threading
 
 _trace_local = _threading.local()
@@ -151,8 +112,7 @@ def _parse_json(text: str) -> dict:
     return json.loads(text)
 
 
-# --- Per-track prompt text, cached by track_id (a track's data never changes
-# during the process lifetime, so this only needs computing once per track). ---
+# Per-track prompt text, cached by track_id.
 
 
 @lru_cache(maxsize=None)
@@ -163,14 +123,7 @@ def _catalog_text(track_id: str) -> str:
 
 @lru_cache(maxsize=None)
 def _catalog_with_meta_text(track_id: str) -> str:
-    """Like _catalog_text, but with per-course difficulty, exam date, and
-    mandatory-vs-elective status - what the drafting step needs to
-    proactively balance a plan (reach for a no-exam sport course to round
-    out credits, avoid stacking several heavy courses together, and -
-    directly addressing the most common real-advisor mistake named in
-    building this - see clustered exam dates coming and route around them
-    itself, instead of only reacting to verify_plan's complaint after
-    drafting something that collides)."""
+    """Catalog text with difficulty, exam date, and requirement tags."""
     track = get_track(track_id)
     lines = []
     for num, c in sorted(track.courses.items()):
@@ -194,11 +147,7 @@ def _mandatory_text(track_id: str) -> str:
 
 @lru_cache(maxsize=None)
 def _foundation_text(track_id: str) -> str:
-    """The mandatory list alone isn't the right basis for "what has a
-    continuing student already completed" - a mandatory course can have
-    prerequisites filed under a completely different category (e.g. a math
-    course under science-electives), and passing the mandatory course means
-    passing those too. Walks real prerequisite trees, not category labels."""
+    """Mandatory courses plus their prerequisite closure."""
     track = get_track(track_id)
     closure = set(track.mandatory_course_numbers)
     frontier = list(track.mandatory_course_numbers)
@@ -212,10 +161,7 @@ def _foundation_text(track_id: str) -> str:
                 closure.add(prereq_number)
                 frontier.append(prereq_number)
 
-    # Some prerequisite courses aren't in this track's own bundle (different
-    # track/faculty, or older numbers) - kept anyway since the model only
-    # needs the number to reason about "would a continuing student have
-    # passed this," not a display name.
+    # Keep external prerequisite numbers even when names are unavailable.
     lines = [
         f"{c} — {track.courses[c]['name']}" if c in track.courses else f"{c} — (prerequisite course, name unavailable)"
         for c in sorted(closure)

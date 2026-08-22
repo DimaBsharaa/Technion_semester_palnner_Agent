@@ -1,27 +1,7 @@
-"""
-Stage 1 of the pipeline -> agent migration: a bounded, tool-calling agent
-loop that replaces agent_loop.py's hardcoded draft -> verify -> repair ->
-compare -> explain sequence with one loop where the MODEL decides which
-tool to call and when it's done (genuine OpenAI tool-calling, not
-JSON-mode structured output at fixed Python-decided points).
+"""Bounded ReAct planner for semester plans.
 
-Extraction (is there enough info to plan?) is unchanged from agent_loop.py
-and reused as-is. This module only takes over once that's settled: given a
-resolved student state, how should the plan get built?
-
-Three properties carried over from the original design, preserved here:
-1. Nothing the model does mid-loop is visible to the student until it
-   calls the terminal tool, deliver_plan - no student-facing turn inside
-   the loop, so mid-conversation rambling/permission-asking can't happen.
-2. Python owns the ceiling: MAX_STEPS and SESSION_BUDGET_USD_CAP are hard
-   limits; if the model never calls deliver_plan, Python forces a wrap-up
-   from the last verified plan.
-3. Python owns final correctness: deliver_plan's course list is always
-   re-run through tools.verify_plan and tools.check_invariants - the
-   model's own bookkeeping is never trusted for hard constraints.
-
-Enabled via AGENT_MODE=react in main.py; agent_loop.py remains the default
-until validated against tests/test_scenarios.py and live testing.
+The model chooses tools and ends with deliver_plan. Python still owns the
+step/cost limits and final verification, so hard constraints stay deterministic.
 """
 
 import json
@@ -48,9 +28,7 @@ from agent_loop import (
 from data_bundle import Track, get_track
 from tool_schemas import REACT_TOOL_SCHEMAS, TERMINAL_TOOL_NAME, build_dispatch
 
-# With diagnostics pre-injected (see PREINJECTED_TOOL_NAMES), a turn is
-# typically draft -> verify -> maybe repair/compare -> deliver, so a tight
-# ceiling caps worst-case spend and forces convergence over dithering.
+# Tight ceiling for cost and convergence.
 MAX_STEPS = int(os.environ.get("REACT_MAX_STEPS", "18"))
 SESSION_BUDGET_USD_CAP = float(os.environ.get("SESSION_BUDGET_USD_CAP", "0.50"))
 
@@ -79,14 +57,7 @@ def _call_with_tools(messages: list[dict]) -> tuple[object, float]:
 
 
 def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: list[int] | None = None) -> str:
-    """The courses the student can ACTUALLY take next semester: offered then,
-    prerequisites satisfied, not already passed. Handing the model the whole
-    catalog (incl. locked/future courses) made it infer eligibility itself
-    and pad credits with filler when it guessed wrong.
-
-    Courses whose EVERY section hits an excluded day get a DAY-BLOCKED tag:
-    the model must not pick them (plan stays clash-free), but uses them for
-    the 'freeing Monday would unlock X and Y' disclosure."""
+    """Return offered, unlocked, not-yet-passed courses for planning."""
     passed_set = set(passed)
     excluded = list(excluded_weekdays or [])
     rows = []
@@ -119,18 +90,13 @@ def _available_courses_text(track: Track, passed: list[str], excluded_weekdays: 
         rows.append(f"{num} — {c['name']} ({c['points']} pts, {load}{sat}, {exam}, {tag}){day_note}")
     if not rows:
         return "(none - every remaining course is either not offered next semester or has unmet prerequisites)"
-    # Shuffled, not sorted by course number: a fixed order caused positional
-    # bias (the model kept defaulting to the same 1-2 electives shown first).
-    # Every row is still explicitly tagged MANDATORY/MANDATORY-CHOICE/
-    # elective, so shuffling only changes which electives are seen first.
+    # Shuffle to reduce fixed-order elective bias.
     random.shuffle(rows)
     return "\n".join(rows)
 
 
 def _sport_courses_in(track: Track, course_numbers: list[str]) -> list[str]:
-    """Sport/PE course numbers in a plan, identified by name - used by the
-    deterministic anti-padding guard, since 'at most one sport course' in
-    the prompt alone was not reliably followed."""
+    """Return Sport/PE course numbers in a plan."""
     sport = []
     for c in course_numbers:
         name = track.courses.get(c, {}).get("name", "")
@@ -144,11 +110,7 @@ def _plan_score(
     plan: list[str] | None = None,
     previous_plan: list[str] | None = None,
 ) -> tuple:
-    """Higher is better: passing beats failing; on revision turns, more
-    overlap with the previous plan beats a stranger plan that scored well
-    (a swap-one-course request must never come back unrelated); then fewer
-    open issues, then a fuller credit load. Used to keep the BEST plan
-    verified this turn, not merely the most recent."""
+    """Score a verified plan for fallback selection."""
     if not verify_result:
         return (-1, 0, 0, 0)
     overlap = len(set(plan or []) & set(previous_plan or []))
@@ -574,13 +536,7 @@ def run_agent_turn_v2(
     known_context: dict | None = None,
     on_event=None,
 ) -> dict:
-    """Same external contract as agent_loop.run_agent_turn (messages,
-    cost_usd, tool_log, stopped_reason, plan_result, needs_input) - the
-    frontend and main.py cannot tell which implementation answered.
-
-    known_context ({"state": {...}, "previous_plan": [...]}) carries
-    forward what an earlier turn resolved, so a follow-up is treated as a
-    revision against known facts, not a from-scratch re-derivation."""
+    """Run one chat turn with the ReAct planner."""
     track = get_track(track_id)
     tool_log = _EmittingList(on_event) if on_event else []
     cost = cost_so_far
