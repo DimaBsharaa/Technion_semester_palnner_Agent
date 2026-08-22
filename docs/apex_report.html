@@ -87,17 +87,10 @@
     The project has two parts. The offline part is a data pipeline that prepares reliable course data. The online part is an agent that chooses tools, checks plans, repairs them, and answers the student.
   </p>
 
-  <h2>Supported Use Cases</h2>
-  <ul>
-    <li>Build a semester plan from Hebrew or English free text.</li>
-    <li>Respect blocked weekdays, pace preference, passed courses, and failed courses.</li>
-    <li>Prioritize failed retakes when they block future courses.</li>
-    <li>Suggest grade-improvement retakes only as a proposal, never as a silent addition.</li>
-    <li>Answer course questions using real CheeseFork review data.</li>
-    <li>Revise a plan on follow-up, such as adding, removing, or swapping a course.</li>
-    <li>Parse an uploaded transcript PDF into courses and grades.</li>
-    <li>Optionally restore sessions with Supabase, using a hashed student email.</li>
-  </ul>
+  <h2>Report Scope</h2>
+  <p>
+    This report focuses on the system design: architecture, data, tools, endpoint contract, and known limitations. The companion document, <em>What APEX Can Do</em>, focuses on user-facing examples and screenshots from the working product.
+  </p>
 
   <h2>Architecture</h2>
   <p>

@@ -2,16 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>APEX What We Built</title>
+  <title>What APEX Can Do</title>
   <style>
-    @page { size: A4; margin: 20mm; }
+    @page { size: A4; margin: 18mm; }
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
       color: #1f2937;
       background: #ffffff;
-      font-size: 11pt;
-      line-height: 1.45;
+      font-size: 10.8pt;
+      line-height: 1.42;
     }
     h1 {
       font-size: 24pt;
@@ -19,10 +19,15 @@
       color: #111827;
     }
     h2 {
-      font-size: 14pt;
-      margin: 22px 0 7px;
+      font-size: 13.5pt;
+      margin: 20px 0 7px;
       padding-bottom: 4px;
       border-bottom: 1px solid #d1d5db;
+      color: #111827;
+    }
+    h3 {
+      font-size: 11.5pt;
+      margin: 12px 0 4px;
       color: #111827;
     }
     p { margin: 0 0 8px; }
@@ -32,7 +37,7 @@
       width: 100%;
       border-collapse: collapse;
       margin: 8px 0 12px;
-      font-size: 10pt;
+      font-size: 9.8pt;
     }
     th, td {
       text-align: left;
@@ -43,7 +48,7 @@
     th { background: #f3f4f6; }
     code {
       font-family: Consolas, monospace;
-      font-size: 9.5pt;
+      font-size: 9.3pt;
       background: #f3f4f6;
       padding: 1px 4px;
       border-radius: 3px;
@@ -52,125 +57,103 @@
     .title-block {
       border-bottom: 2px solid #111827;
       padding-bottom: 12px;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
+    .shot {
+      margin: 10px 0 12px;
+      border: 1px solid #d1d5db;
+      background: #f9fafb;
+      padding: 7px;
+      page-break-inside: avoid;
+    }
+    .shot img {
+      display: block;
+      width: 100%;
+      max-height: 150mm;
+      object-fit: contain;
+    }
+    .caption {
+      margin: 6px 0 0;
+      font-size: 9.5pt;
+      color: #4b5563;
+    }
+    .page-break { page-break-before: always; }
   </style>
 </head>
 <body>
   <div class="title-block">
-    <h1>What We Built</h1>
-    <p class="muted">APEX Semester Planning Agent</p>
+    <h1>What APEX Can Do</h1>
+    <p class="muted">A practical view of the Semester Planning Agent</p>
     <p>Live demo: <a href="https://technion-semester-palnner-agent.vercel.app">https://technion-semester-palnner-agent.vercel.app</a></p>
   </div>
 
-  <h2>Short Version</h2>
+  <h2>In One Sentence</h2>
   <p>
-    We built a working semester-planning agent for Technion students. It has a frontend, required API endpoints, an offline data pipeline, a ReAct agent loop, planning tools, verification tools, optional memory, and transcript upload.
+    APEX turns a student's situation into a verified semester plan, then helps revise it when the student changes constraints, asks about courses, or wants a safer path.
   </p>
 
-  <h2>Main Components</h2>
+  <h2>Capability Map</h2>
   <table>
-    <thead><tr><th>Component</th><th>What was built</th></tr></thead>
+    <thead><tr><th>What the student needs</th><th>What APEX does</th></tr></thead>
     <tbody>
-      <tr><td>Frontend</td><td>A single-page web app with track selection, chat intake, plan display, transcript upload, cost display, and trace display.</td></tr>
-      <tr><td>Backend</td><td>FastAPI server with chat endpoints, streaming support, transcript parsing, session restore, and the required assignment endpoints.</td></tr>
-      <tr><td>Agent loop</td><td>A bounded ReAct loop where the model chooses tools and ends with <code>deliver_plan</code>.</td></tr>
-      <tr><td>Offline data pipeline</td><td>Scripts that fetch and package Technion catalog data, requirements, schedules, exams, CheeseFork reviews, and grade histograms.</td></tr>
-      <tr><td>Verification</td><td>Python checks for prerequisites, unknown courses, already-passed courses, duplicate courses, credit range, mandatory progress, schedule clashes, workload, and exam spacing.</td></tr>
-      <tr><td>Persistence</td><td>Optional Supabase session save and restore using a hashed student email.</td></tr>
-      <tr><td>Deployment</td><td>Vercel deployment with the root GUI and the required API routes.</td></tr>
+      <tr><td>Build a semester</td><td>Creates a course list with credits, workload, exams, weekly schedule, and a short explanation.</td></tr>
+      <tr><td>Stay within rules</td><td>Checks prerequisites, already-passed courses, unknown courses, duplicate courses, credit range, mandatory progress, schedule clashes, workload, and exam spacing.</td></tr>
+      <tr><td>Use real course signals</td><td>Uses Technion catalog data, schedules, exam dates, CheeseFork difficulty and satisfaction, and grade histogram averages.</td></tr>
+      <tr><td>Handle retakes</td><td>Prioritizes failed retakes and can suggest grade-improvement retakes only after comparing the student's grade, course average, personal average, and reviews.</td></tr>
+      <tr><td>Answer course questions</td><td>Answers focused questions about a course using review data instead of making a full semester plan.</td></tr>
+      <tr><td>Revise an existing plan</td><td>Keeps as much of the old plan as possible while adding, removing, or swapping courses.</td></tr>
+      <tr><td>Read transcript data</td><td>Accepts a transcript PDF and extracts courses and grades for planning.</td></tr>
+      <tr><td>Keep continuity</td><td>Can restore saved sessions through Supabase using a hashed student email.</td></tr>
     </tbody>
   </table>
 
-  <h2>Feature List</h2>
+  <h2>Example 1: Verified Semester Plan</h2>
+  <p>
+    The agent delivers a plan only after checking it. The student sees the result in a compact plan view with verification status, total credits, workload, course numbers, exams, and course names.
+  </p>
+  <div class="shot">
+    <img src="assets/verified_semester_plan.png" alt="Verified semester plan example">
+    <p class="caption">A verified 18.5-credit plan with workload score and exam dates.</p>
+  </div>
+
+  <h2>Example 2: Grade-Improvement Retake Advice</h2>
+  <p>
+    APEX does not blindly retake every low grade. It compares the student's grade with the historical course average, the student's own average, and CheeseFork reviews. Then it explains whether the retake is worth considering.
+  </p>
+  <div class="shot">
+    <img src="assets/grade_retake_advice.jpeg" alt="Grade-improvement retake advice example">
+    <p class="caption">The agent explains why Statistics 1 is a reasonable grade-improvement retake for this student.</p>
+  </div>
+
+  <div class="page-break"></div>
+
+  <h2>Example 3: Honest Follow-Up Revision</h2>
+  <p>
+    When the student asks for a change, the agent tries to preserve the existing plan. If a requested course creates a real timetable conflict, it says so directly and asks for confirmation before forcing the exception.
+  </p>
+  <div class="shot">
+    <img src="assets/followup_conflict_revision.jpeg" alt="Follow-up revision with conflict explanation">
+    <p class="caption">A follow-up plan revision that keeps most courses, names the remaining conflict, and waits for explicit approval.</p>
+  </div>
+
+  <h2>Other Things APEX Handles</h2>
   <ul>
-    <li>Free-text planning in Hebrew or English.</li>
+    <li>Hebrew or English free-text intake.</li>
     <li>Three supported Technion tracks.</li>
-    <li>Passed-course and failed-course handling.</li>
-    <li>Failed-course retake priority.</li>
-    <li>Grade-improvement retake analysis using the student's grade, course average, and the student's own average.</li>
-    <li>Explicit add, remove, and swap requests.</li>
-    <li>Course-question mode grounded in CheeseFork reviews.</li>
-    <li>Section-level weekly timetable analysis.</li>
-    <li>Exam calendar and exam-spacing checks.</li>
-    <li>Workload score and risk report.</li>
-    <li>Roadmap to graduation.</li>
+    <li>Blocked weekdays and section-level timetable checks.</li>
+    <li>Light, normal, and fast pace preferences.</li>
+    <li>Exam calendar and study-period pressure.</li>
+    <li>Risk report and roadmap to graduation.</li>
     <li>Live offering check before final delivery.</li>
-    <li>Transcript PDF parsing.</li>
-    <li>Optional Supabase memory.</li>
-    <li>Model architecture diagram endpoint.</li>
-    <li>Step trace for the agent's reasoning loop.</li>
+    <li>Required assignment endpoints with prompt, response, and model-step trace.</li>
   </ul>
 
-  <h2>What APEX Can Do - Examples</h2>
-  <p>
-    Real prompts against the live agent and the real text it returned - not invented examples.
-  </p>
-
-  <h3>Building a plan, resolving a conflict, and proposing a retake in one turn</h3>
-  <p class="muted">Prompt: student starting semester 4, already passed "Human Factors in Data" (גורמי אנוש בדאטא) with a 55, class average 89.4.</p>
-  <p>
-    <em>"This is the best plan I found (7 courses, 18.5 credits) - I couldn't fully satisfy every constraint within this round. Still open: class time overlaps with [a humanities elective] in every section combination. Note: [that elective] was removed from the plan because its class times collide with another course in every available section combination - a clashing week is never delivered. Note: added [a mandatory course] - the plan had fallen below the credit floor; these fill it back out from the available shortlist. One more thing: your grade in גורמי אנוש בדאטא was notably below the comparison averages - want me to add a retake of it to your plan next time?"</em>
-  </p>
-  <p class="muted">Next turn, student replies "yes, add the retake":</p>
-  <p>
-    <em>"...Note: added your confirmed retake of גורמי אנוש בדאטא."</em> The course now appears in the delivered plan tagged as a retake - never added without that explicit yes.
-  </p>
-
-  <h3>Refusing a course that doesn't exist, instead of silently dropping the request</h3>
-  <p class="muted">Prompt: "add course 00000000 please" (not a real course number in the catalog).</p>
-  <p>
-    <em>"The added 00000000 can't be included because it isn't a valid course number, so that request is the only thing I had to reject."</em>
-  </p>
-
-  <h3>Recognizing when nothing needs to change</h3>
-  <p class="muted">Prompt: "Looks perfect, thank you!" - a plain closing remark on an already-delivered plan.</p>
-  <p>
-    <em>"Glad it works for you! Come back anytime you want to change something."</em> No replanning runs at all - the agent recognizes this as an acknowledgment, not a change request, so the existing plan is returned untouched at a fraction of the usual cost.
-  </p>
-
-  <h2>Build Timeline</h2>
-  <table>
-    <thead><tr><th>Stage</th><th>Result</th></tr></thead>
-    <tbody>
-      <tr><td>Data collection</td><td>Built scripts for Technion data, CheeseFork reviews, and grade histograms.</td></tr>
-      <tr><td>Planner foundation</td><td>Built the first structured planning pipeline with draft, verify, repair, and explain stages.</td></tr>
-      <tr><td>Agent upgrade</td><td>Moved the main runtime to a ReAct loop with model-chosen tools.</td></tr>
-      <tr><td>Planning quality</td><td>Added reviews, exam spacing, workload, future impact, risk, and roadmap tools.</td></tr>
-      <tr><td>Reliability</td><td>Added deterministic guards for common failure cases and final delivery checks.</td></tr>
-      <tr><td>Product layer</td><td>Added frontend, transcript upload, Supabase memory, deployment, and assignment endpoints.</td></tr>
-    </tbody>
-  </table>
-
-  <h2>Testing</h2>
-  <table>
-    <thead><tr><th>Test type</th><th>Purpose</th></tr></thead>
-    <tbody>
-      <tr><td>Mocked tests</td><td>Check hard guarantees without spending model budget.</td></tr>
-      <tr><td>Architecture tests</td><td>Show the difference between the pipeline mode and the ReAct agent mode.</td></tr>
-      <tr><td>Revision tests</td><td>Check that follow-up requests preserve known state and do not restart unnecessarily.</td></tr>
-      <tr><td>Live tests</td><td>Exercise real model behavior on planning, retakes, constraints, and course questions.</td></tr>
-      <tr><td>Endpoint tests</td><td>Confirm the required Vercel routes respond with the expected shape.</td></tr>
-    </tbody>
-  </table>
-
-  <h2>Limitations and Future Enhancements</h2>
-  <p>
-    The planner uses a rich planning context so the model can compare courses, exams, workload, and reviews before choosing tools and delivering a plan. This is useful for planning quality, but it is also one reason the planning prompt is longer than a normal chat prompt.
-  </p>
-  <p>
-    The main tradeoff is that the planning core relies on structured tools, not broad document retrieval. That is intentional for exact facts like prerequisites, schedules, credits, and exam dates. A future version could add focused retrieval for policy documents and administrative guidance.
-  </p>
+  <h2>Limits and Future Work</h2>
   <ul>
     <li>The bundled catalog is a snapshot. It will not update automatically when Technion publishes a new catalog unless the pipeline is rerun.</li>
     <li>The system does not register students to courses or access private Technion accounts.</li>
     <li>When constraints conflict, the agent may return the best honest plan and clearly name what is still unresolved.</li>
-    <li>Future work could add a small policy-retrieval layer for regulations, forms, and administrative instructions.</li>
+    <li>Future work could add focused policy retrieval for regulations, forms, and administrative guidance.</li>
   </ul>
-
-  <h2>Final State</h2>
-  <p>
-    The project is an agent backed by a data pipeline. The pipeline prepares the knowledge. The runtime agent chooses tools, checks evidence, builds plans, repairs failures, and explains the result to the student.
-  </p>
 </body>
 </html>
