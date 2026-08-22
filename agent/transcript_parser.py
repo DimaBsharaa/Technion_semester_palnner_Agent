@@ -3,7 +3,7 @@ Parses a Technion undergraduate transcript PDF into the same structured
 shape build_state_from_intake already consumes: passed_courses,
 failed_courses, and a grades dict - replacing the least reliable step in
 the whole pipeline (LLM free-text guessing) with exact ground truth
-whenever a student has the PDF, per docs/enhancement-checklist.md item 1.
+whenever a student has the PDF.
 
 Text-layer extraction only (pdfplumber, pure Python - no OCR, no
 poppler/native-binary dependency, unlike the pdftoppm tool that isn't
@@ -16,9 +16,8 @@ carries the student's full name and Technion ID number. This module MUST
 NEVER return, log, or persist those - only the course rows (course number,
 pass/fail, grade). The PDF bytes and any extracted raw text are processed
 in memory only and never written to disk, logged, or cached. This is a
-hard rule from docs/enhancement-checklist.md item 1, restated here because
-it's easy to violate by accident later (e.g. logging the full extracted
-text while debugging a parsing miss).
+hard rule, restated here because it's easy to violate by accident later
+(e.g. logging the full extracted text while debugging a parsing miss).
 """
 
 import io

@@ -5,8 +5,8 @@ bundles, WITHOUT re-running the full fetch_track_bundle.py pipeline.
 
 Deliberately separate from a full pipeline re-run: re-fetching everything
 would also re-touch SAP/CheeseFork data with no reviewable diff process yet
-(docs/enhancement-checklist.md item 4, a separate unsolved problem) - this
-script only ever adds the one new key, nothing else in the file changes.
+(a separate unsolved problem) - this script only ever adds the one new key,
+nothing else in the file changes.
 
 Any *future* full pipeline run already includes this automatically
 (fetch_track_bundle.py's --no-histograms flag), so this script only needs
