@@ -8,27 +8,22 @@
     body {
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
-      color: #1f2937;
+      color: #172033;
       background: #ffffff;
-      font-size: 10.8pt;
-      line-height: 1.42;
+      font-size: 10.7pt;
+      line-height: 1.45;
     }
     h1 {
-      font-size: 24pt;
-      margin: 0 0 6px;
-      color: #111827;
+      font-size: 25pt;
+      margin: 0 0 5px;
+      color: #101828;
     }
     h2 {
       font-size: 13.5pt;
-      margin: 20px 0 7px;
+      margin: 18px 0 7px;
       padding-bottom: 4px;
-      border-bottom: 1px solid #d1d5db;
-      color: #111827;
-    }
-    h3 {
-      font-size: 11.5pt;
-      margin: 12px 0 4px;
-      color: #111827;
+      border-bottom: 1px solid #d7dde8;
+      color: #101828;
     }
     p { margin: 0 0 8px; }
     ul { margin: 6px 0 10px 20px; padding: 0; }
@@ -37,45 +32,44 @@
       width: 100%;
       border-collapse: collapse;
       margin: 8px 0 12px;
-      font-size: 9.8pt;
+      font-size: 9.7pt;
     }
     th, td {
       text-align: left;
       vertical-align: top;
       padding: 7px 8px;
-      border: 1px solid #d1d5db;
+      border: 1px solid #d7dde8;
     }
-    th { background: #f3f4f6; }
-    code {
-      font-family: Consolas, monospace;
-      font-size: 9.3pt;
-      background: #f3f4f6;
-      padding: 1px 4px;
-      border-radius: 3px;
-    }
-    .muted { color: #4b5563; }
+    th { background: #f2f5f8; color: #101828; }
+    .muted { color: #536074; }
     .title-block {
-      border-bottom: 2px solid #111827;
+      border-bottom: 2px solid #101828;
       padding-bottom: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 15px;
     }
-    .shot {
+    .lead {
+      font-size: 12pt;
+      color: #253044;
+      margin-top: 6px;
+      max-width: 170mm;
+    }
+    .proof {
       margin: 10px 0 12px;
-      border: 1px solid #d1d5db;
-      background: #f9fafb;
+      border: 1px solid #d7dde8;
+      background: #f8fafc;
       padding: 7px;
       page-break-inside: avoid;
     }
-    .shot img {
+    .proof img {
       display: block;
       width: 100%;
-      max-height: 150mm;
+      max-height: 148mm;
       object-fit: contain;
     }
     .caption {
       margin: 6px 0 0;
-      font-size: 9.5pt;
-      color: #4b5563;
+      font-size: 9.4pt;
+      color: #536074;
     }
     .page-break { page-break-before: always; }
   </style>
@@ -83,77 +77,99 @@
 <body>
   <div class="title-block">
     <h1>What APEX Can Do</h1>
-    <p class="muted">A practical view of the Semester Planning Agent</p>
+    <p class="muted">A student-facing view of the Semester Planning Agent</p>
     <p>Live demo: <a href="https://technion-semester-palnner-agent.vercel.app">https://technion-semester-palnner-agent.vercel.app</a></p>
   </div>
 
-  <h2>In One Sentence</h2>
-  <p>
-    APEX turns a student's situation into a verified semester plan, then helps revise it when the student changes constraints, asks about courses, or wants a safer path.
+  <p class="lead">
+    APEX is built for the messy part of semester planning: a student has passed some courses, failed others, wants a reasonable workload, may have blocked days, and still needs to make real degree progress. The agent turns that situation into a checked plan and keeps helping when the student changes their mind.
   </p>
 
-  <h2>Capability Map</h2>
+  <h2>From One Message To A Plan</h2>
+  <p>
+    The student can write naturally in Hebrew or English. APEX extracts the semester, track, pace, passed courses, failed courses, unavailable weekdays, requested courses, grades, and any special constraints. If something important is missing, it asks for that missing detail instead of guessing.
+  </p>
+  <p>
+    Once it has enough information, APEX builds a plan with course numbers, course names, credits, exam dates, workload, and a short explanation of the tradeoffs. The final plan is checked by deterministic code before it reaches the student.
+  </p>
+
+  <h2>What The Student Gets</h2>
   <table>
-    <thead><tr><th>What the student needs</th><th>What APEX does</th></tr></thead>
+    <thead><tr><th>Output</th><th>Why it matters</th></tr></thead>
     <tbody>
-      <tr><td>Build a semester</td><td>Creates a course list with credits, workload, exams, weekly schedule, and a short explanation.</td></tr>
-      <tr><td>Stay within rules</td><td>Checks prerequisites, already-passed courses, unknown courses, duplicate courses, credit range, mandatory progress, schedule clashes, workload, and exam spacing.</td></tr>
-      <tr><td>Use real course signals</td><td>Uses Technion catalog data, schedules, exam dates, CheeseFork difficulty and satisfaction, and grade histogram averages.</td></tr>
-      <tr><td>Handle retakes</td><td>Prioritizes failed retakes and can suggest grade-improvement retakes only after comparing the student's grade, course average, personal average, and reviews.</td></tr>
-      <tr><td>Answer course questions</td><td>Answers focused questions about a course using review data instead of making a full semester plan.</td></tr>
-      <tr><td>Revise an existing plan</td><td>Keeps as much of the old plan as possible while adding, removing, or swapping courses.</td></tr>
-      <tr><td>Read transcript data</td><td>Accepts a transcript PDF and extracts courses and grades for planning.</td></tr>
-      <tr><td>Keep continuity</td><td>Can restore saved sessions through Supabase using a hashed student email.</td></tr>
+      <tr><td>Verified course list</td><td>Courses are checked for prerequisites, duplicates, already-passed courses, unknown numbers, credit range, and mandatory progress.</td></tr>
+      <tr><td>Weekly timetable</td><td>Sections are checked so the plan does not hide class-time collisions.</td></tr>
+      <tr><td>Exam view</td><td>Moed A and Moed B dates are considered, with warnings when exams are too close.</td></tr>
+      <tr><td>Workload and risk</td><td>The plan weighs difficulty, review data, heavy-course stacking, and future impact.</td></tr>
+      <tr><td>Human explanation</td><td>The agent explains why this combination was chosen and what, if anything, is still unresolved.</td></tr>
     </tbody>
   </table>
 
-  <h2>Example 1: Verified Semester Plan</h2>
+  <h2>Example: A Verified Plan</h2>
   <p>
-    The agent delivers a plan only after checking it. The student sees the result in a compact plan view with verification status, total credits, workload, course numbers, exams, and course names.
+    In this example, APEX produced a complete 18.5-credit semester with a moderate workload score. The student can immediately see the courses, credits, exams, and verification status.
   </p>
-  <div class="shot">
+  <div class="proof">
     <img src="assets/verified_semester_plan.png" alt="Verified semester plan example">
-    <p class="caption">A verified 18.5-credit plan with workload score and exam dates.</p>
+    <p class="caption">A checked semester plan: verified, 18.5 credits, workload 46.8/100.</p>
   </div>
 
-  <h2>Example 2: Grade-Improvement Retake Advice</h2>
+  <h2>Course Advice, Not Just Scheduling</h2>
   <p>
-    APEX does not blindly retake every low grade. It compares the student's grade with the historical course average, the student's own average, and CheeseFork reviews. Then it explains whether the retake is worth considering.
+    APEX can also answer direct questions about courses. For example, if the student asks whether a course is worth retaking to improve a grade, the answer is based on several signals together: the student's grade, the course's historical average, the student's own average, CheeseFork difficulty, satisfaction, and review text.
   </p>
-  <div class="shot">
+  <p>
+    This matters because the same grade can mean different things for different students. A 70 can be a warning sign for a student whose average is much higher, but less important for another student whose overall average is close to 70.
+  </p>
+  <div class="proof">
     <img src="assets/grade_retake_advice.jpeg" alt="Grade-improvement retake advice example">
-    <p class="caption">The agent explains why Statistics 1 is a reasonable grade-improvement retake for this student.</p>
+    <p class="caption">The agent explains why Statistics 1 may be worth retaking, using grades, averages, and reviews.</p>
   </div>
 
   <div class="page-break"></div>
 
-  <h2>Example 3: Honest Follow-Up Revision</h2>
+  <h2>Follow-Up Changes</h2>
   <p>
-    When the student asks for a change, the agent tries to preserve the existing plan. If a requested course creates a real timetable conflict, it says so directly and asks for confirmation before forcing the exception.
+    APEX does not treat every follow-up as a brand-new planning problem. If the student asks to add, remove, or swap a course, it keeps as much of the previous plan as possible and changes only what needs to change.
   </p>
-  <div class="shot">
+  <p>
+    When a request creates a real conflict, the agent does not silently drop the request. It explains the conflict and asks for explicit confirmation before forcing an exception.
+  </p>
+  <div class="proof">
     <img src="assets/followup_conflict_revision.jpeg" alt="Follow-up revision with conflict explanation">
-    <p class="caption">A follow-up plan revision that keeps most courses, names the remaining conflict, and waits for explicit approval.</p>
+    <p class="caption">A follow-up revision that preserves most of the old plan and clearly names the remaining conflict.</p>
   </div>
 
-  <h2>Other Things APEX Handles</h2>
+  <h2>Retakes And Grades</h2>
+  <p>
+    Failed retakes are treated as high priority because they often block future courses. Grade-improvement retakes are handled more carefully: APEX can suggest one, but it does not add it silently. The student must approve it first.
+  </p>
+  <p>
+    Grades can come from the chat or from an uploaded transcript PDF. The system does not fetch private Technion account data.
+  </p>
+
+  <h2>What Else It Handles</h2>
   <ul>
-    <li>Hebrew or English free-text intake.</li>
     <li>Three supported Technion tracks.</li>
-    <li>Blocked weekdays and section-level timetable checks.</li>
+    <li>Hebrew and English intake.</li>
+    <li>Passed, failed, and explicitly requested courses.</li>
+    <li>Blocked weekdays and section-level timetable constraints.</li>
     <li>Light, normal, and fast pace preferences.</li>
-    <li>Exam calendar and study-period pressure.</li>
-    <li>Risk report and roadmap to graduation.</li>
+    <li>Course reviews from CheeseFork.</li>
+    <li>Historical grade averages from technion-histograms.</li>
+    <li>Transcript PDF parsing into courses and grades.</li>
+    <li>Optional Supabase session restore using a hashed student email.</li>
     <li>Live offering check before final delivery.</li>
-    <li>Required assignment endpoints with prompt, response, and model-step trace.</li>
+    <li>Roadmap, risk report, weekly schedule, and exam study plan tools.</li>
+    <li>Required API endpoints with prompt, response, and model-step trace.</li>
   </ul>
 
-  <h2>Limits and Future Work</h2>
-  <ul>
-    <li>The bundled catalog is a snapshot. It will not update automatically when Technion publishes a new catalog unless the pipeline is rerun.</li>
-    <li>The system does not register students to courses or access private Technion accounts.</li>
-    <li>When constraints conflict, the agent may return the best honest plan and clearly name what is still unresolved.</li>
-    <li>Future work could add focused policy retrieval for regulations, forms, and administrative guidance.</li>
-  </ul>
+  <h2>Limits And Future Work</h2>
+  <p>
+    APEX is a planning assistant, not a registration system. It does not enroll students, access private Technion accounts, or promise that cached catalog data will update by itself. When Technion publishes a new catalog, the offline pipeline should be rerun.
+  </p>
+  <p>
+    Future work could add focused retrieval for academic regulations, forms, and administrative guidance. The core course checks should remain deterministic because prerequisites, schedules, credits, and exam dates need exact answers.
+  </p>
 </body>
 </html>
