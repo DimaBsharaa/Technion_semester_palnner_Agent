@@ -154,23 +154,18 @@
     </tbody>
   </table>
 
-  <h2>Design Choice About RAG</h2>
-  <p>
-    We did not add a large RAG layer because the core task depends on exact structured facts. A vector search result should not decide whether a course is offered, whether prerequisites are met, or whether two classes overlap.
-  </p>
-  <p>
-    If the project grows, the best RAG addition would be a small policy search tool for academic regulations. That is separate from the planning core.
-  </p>
-
   <h2>Limitations and Future Enhancements</h2>
   <p>
     The planner uses a rich planning context so the model can compare courses, exams, workload, and reviews before choosing tools and delivering a plan. This is useful for planning quality, but it is also one reason the planning prompt is longer than a normal chat prompt.
+  </p>
+  <p>
+    The main tradeoff is that the planning core relies on structured tools, not broad document retrieval. That is intentional for exact facts like prerequisites, schedules, credits, and exam dates. A future version could add focused retrieval for policy documents and administrative guidance.
   </p>
   <ul>
     <li>The bundled catalog is a snapshot. It will not update automatically when Technion publishes a new catalog unless the pipeline is rerun.</li>
     <li>The system does not register students to courses or access private Technion accounts.</li>
     <li>When constraints conflict, the agent may return the best honest plan and clearly name what is still unresolved.</li>
-    <li>A future version could add a small RAG tool for policy documents and administrative guidance.</li>
+    <li>Future work could add a small policy-retrieval layer for regulations, forms, and administrative instructions.</li>
   </ul>
 
   <h2>Final State</h2>

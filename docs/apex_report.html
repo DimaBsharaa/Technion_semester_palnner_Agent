@@ -146,27 +146,19 @@
     </tbody>
   </table>
 
-  <h2>Why There Is No Large RAG Layer</h2>
-  <p>
-    The main planning data is structured. Course numbers, prerequisites, credits, section times, exam dates, and passed courses need exact checks. For this reason, the project uses typed tools rather than vector retrieval for the core planner.
-  </p>
-  <p>
-    A small policy RAG tool could be added later for academic regulations or administrative documents. It was not added to this version because it would not improve the core scheduling and verification task.
-  </p>
-
   <h2>Limitations and Future Enhancements</h2>
   <p>
     The planner currently gives the model a compact but information-rich planning context for the current semester. This makes the agent strong at comparing courses, workload, reviews, and exam spacing in one pass, but it also makes the planning prompt longer than a minimal chat prompt.
   </p>
   <p>
-    Future versions can move more of this context behind smaller retrieval tools, especially for policy documents or large administrative text. The most useful RAG addition would be focused policy search, not replacing the exact prerequisite, schedule, and exam checks already handled by deterministic tools.
+    The current design keeps core planning facts in structured tools because prerequisites, credits, section times, and exam dates need exact checks. A future version could add retrieval for policy documents and administrative guidance, while keeping scheduling and degree-rule validation deterministic.
   </p>
   <ul>
     <li>The data bundle is a snapshot. It will not automatically update when Technion publishes a new catalog unless the offline pipeline is rerun.</li>
     <li>The system does not register students to courses.</li>
     <li>The system does not access private Technion accounts.</li>
     <li>The agent can report a best honest plan when constraints make a perfect plan impossible.</li>
-    <li>A future RAG layer could cover academic policy documents and administrative instructions.</li>
+    <li>Future work could add a small policy-retrieval layer for regulations, forms, and administrative instructions.</li>
   </ul>
 
   <h2>Required Endpoints</h2>
