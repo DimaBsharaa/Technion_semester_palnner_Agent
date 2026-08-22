@@ -1,19 +1,7 @@
-"""
-Deterministic tool implementations the agent can call. Each function takes
-a Track (see data_bundle.py - one degree track's static data) plus plain
-JSON-able arguments, and returns a plain JSON-able dict - no LLM calls, no
-network calls, just lookups/math over the bundled track data plus whatever
-the student has stated about themselves this session.
+"""Deterministic tools used by the planning agent.
 
-Keeping this logic here (not left to the LLM to reason about) is a
-deliberate cost control: exam-gap arithmetic, graph traversal, and category
-auditing are exactly the kind of thing a model gets subtly wrong under
-token pressure, and every token spent redoing it here in the tool result
-would be a token not spent on judgment calls the model is actually good at.
-
-Every function takes the track explicitly rather than reading a module-level
-"current track" global - the latter would corrupt concurrent requests for
-different students planning different tracks at the same time.
+Tools return plain JSON-able data from the bundled track data and the
+student's session state. LLM calls stay outside this module.
 """
 
 from datetime import date
@@ -21,19 +9,17 @@ from datetime import date
 from data_bundle import Track, _bottom_categories, _leaf_courses
 from prereq_parser import collect_prereq_courses
 
-DEFAULT_MIN_CREDITS = 16  # 18 is the target load for a normal-pace semester; a bit above is fine
+DEFAULT_MIN_CREDITS = 16
 DEFAULT_MAX_CREDITS = 24
-LIGHT_PACE_MIN_CREDITS = 14  # a student who explicitly asks for "light" gets a lower floor...
-LIGHT_PACE_MAX_CREDITS = 18  # ...and a lower ceiling too, never above the normal target
+LIGHT_PACE_MIN_CREDITS = 14
+LIGHT_PACE_MAX_CREDITS = 18
 DEFAULT_MIN_EXAM_GAP_DAYS = 3
-DEFAULT_WORKLOAD_CAP = 80  # 0-100 scale; see _workload_score
-DEFAULT_MIN_MANDATORY_COURSES = 3  # a semester carrying only 1-2 mandatory courses wastes a term
+DEFAULT_WORKLOAD_CAP = 80
+DEFAULT_MIN_MANDATORY_COURSES = 3
 
-# How many semesters of buffer beyond a course's prereq depth before it's
-# assumed already completed (assess_progress / backfill_passed_courses).
-# Was 2 - real semester-3+ mandatory courses can sit at depth 1 (shallow
-# prereq chain but not actually early-semester), silently excluded
-# otherwise. See assess_progress's docstring for the full evidence.
+# Buffer beyond prereq depth before a course is expected to be completed.
+# Was 2 - real semester-3+ mandatory courses can sit at prereq-depth 1,
+# silently excluded otherwise.
 EXPECTED_BY_NOW_BUFFER = 3
 
 # CheeseFork's difficultyRank is 1-5; bucket boundaries for summarize_cheesefork.
@@ -42,15 +28,7 @@ _MEDIUM_MAX = 3.75
 
 
 def search_courses(track: Track, query: str) -> list[dict]:
-    """Looks up course numbers by (partial) name or by number, so the agent
-    never has to guess or invent a course number - a student naming a course
-    in English or Hebrew, or half-remembering its name, should always be
-    resolved here before it's used in any other tool call.
-
-    Matches on either the whole query as a substring, or - since a model's
-    Hebrew translation of an English course name may be close but not
-    exact - on any individual word of the query appearing in the course
-    name, so an approximate translation still finds the right course."""
+    """Find courses by number, partial name, or approximate words."""
     query = query.strip().lower()
     if not query:
         return []
@@ -89,12 +67,7 @@ def _prereq_satisfied(tree: dict | None, passed: set[str]) -> bool:
 
 
 def _expected_by_now(track: Track, course_number: str, depth: int, semester_number: int) -> bool:
-    """True if this course should already be done by semester_number.
-    Prefers track.official_semester (digitized from Technion's own DDS
-    diagram, see data_bundle.py) whenever it's known for this course -
-    real ground truth, not an approximation. Only falls back to the
-    prerequisite-depth heuristic for courses the diagram hasn't been
-    transcribed for yet."""
+    """Return whether a course is expected before this semester."""
     official = track.official_semester.get(course_number)
     if official is not None:
         return official < semester_number
@@ -102,28 +75,14 @@ def _expected_by_now(track: Track, course_number: str, depth: int, semester_numb
 
 
 def assess_progress(track: Track, semester_number: int, passed_courses: list[str]) -> dict:
-    """The first diagnostic step, before anything else: how does this
-    student's actual completion compare to a normal student at this point
-    in the track?
-
-    "depth" is a PREREQUISITE-GRAPH property (prerequisite hops deep), not
-    a real semester-sequence number - a shallow chain doesn't mean Technion
-    schedules a course early, since pacing/credit-balancing spreads
-    mandatory courses independent of prereq depth (e.g. real semester-3+
-    courses like Software Engineering or DB Management can sit at depth 1).
-    EXPECTED_BY_NOW_BUFFER widens that gap - still an approximation, used
-    only where track.official_semester (Technion's own DDS diagram, see
-    data_bundle.py) doesn't cover a course yet.
-    """
+    """Compare the student's progress with the track's expected sequence."""
     passed = set(passed_courses)
     depths = track.mandatory_prereq_depths
     expected_completed = {c for c, d in depths.items() if _expected_by_now(track, c, d, semester_number)}
     missing_vs_expected = sorted(
         {c: track.courses[c]["name"] for c in (expected_completed - passed) if c in track.courses}.items()
     )
-    # Choose-one-variant requirements (calculus, algebra, probability...):
-    # due when the group's earliest variant sits at an expected-done depth
-    # and NO variant was passed.
+    # Choice groups are due only when no option in the group was passed.
     for group in track.mandatory_choice_groups:
         if group["depth"] <= semester_number - EXPECTED_BY_NOW_BUFFER and not (set(group["options"]) & passed):
             missing_vs_expected.append((group["options"][0], f"{group['label']} (one of these is required)"))
@@ -151,31 +110,19 @@ def assess_progress(track: Track, semester_number: int, passed_courses: list[str
 
 
 def get_intake_options(track: Track) -> dict:
-    """Static, deterministic data for a structured intake form, instead of
-    asking the student to type free text for things that are really just a
-    fixed choice - the mandatory course list is the same set every time, so
-    there's no reason to make an LLM re-derive names and numbers from a
-    typed description. depth is included per course so a frontend can
-    pre-check "probably passed" once the student picks a semester number,
-    the same heuristic assess_progress and drafting already use."""
+    """Return deterministic options for the structured intake form."""
     mandatory = [
         {
             "course_number": c,
             "name": track.courses[c]["name"],
             "depth": track.mandatory_prereq_depths.get(c, 0),
-            # Real DDS-diagram placement, where known - lets a frontend
-            # sort by actual semester instead of the depth proxy. null
-            # when not yet digitized for this course.
+            # Real DDS placement when available.
             "official_semester": track.official_semester.get(c),
         }
         for c in sorted(track.mandatory_course_numbers)
         if c in track.courses
     ]
-    # Choose-one-variant requirements appear as ONE row each (the student
-    # answers for the group; the first option stands in as its id) - UNLESS
-    # one specific variant is already individually listed above (tagged by
-    # official_semester or the tree walk as required on its own), which
-    # would otherwise ask the same real requirement as two questions.
+    # Show each choose-one requirement once.
     for group in track.mandatory_choice_groups:
         if any(o in track.mandatory_course_numbers for o in group["options"]):
             continue
@@ -197,9 +144,8 @@ def get_intake_options(track: Track) -> dict:
         "mandatory_courses": mandatory,
         "weekdays": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
         "pace_options": ["light", "normal", "fast"],
-        # The frontend's "expected done by now" checklist filter must use
-        # this SAME number, not a hardcoded copy - a separate hardcoded
-        # buffer there previously drifted out of sync with this value.
+        # Frontend must use this same number, not its own hardcoded copy -
+        # they drifted out of sync once before.
         "expected_by_now_buffer": EXPECTED_BY_NOW_BUFFER,
     }
 
