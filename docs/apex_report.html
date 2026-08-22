@@ -154,13 +154,20 @@
     A small policy RAG tool could be added later for academic regulations or administrative documents. It was not added to this version because it would not improve the core scheduling and verification task.
   </p>
 
-  <h2>Prompt Size and Call Efficiency</h2>
+  <h2>Limitations and Future Enhancements</h2>
   <p>
-    The planning system prompt is long because it embeds the full eligible-course list (difficulty, satisfaction, exam date, mandatory status) for the semester, not because of unrelated padding. Every field in that list is read by name by a specific planning rule - for example, exam dates are compared across candidates to avoid scheduling two exams close together, and difficulty and satisfaction ratings are compared when choosing between electives. Fetching this data per course through tool calls instead would not reduce it: the same data would move into tool-result history and still be resent on later turns, while adding more model calls per plan - working against "avoid unnecessary LLM calls," not toward it.
+    The planner currently gives the model a compact but information-rich planning context for the current semester. This makes the agent strong at comparing courses, workload, reviews, and exam spacing in one pass, but it also makes the planning prompt longer than a minimal chat prompt.
   </p>
   <p>
-    Prompt size was not independently trimmed for cost because it is not the cost driver here. Input tokens are priced well below output tokens ($0.25 vs $2.00 per million), and this was measured, not assumed. Output length and step count - not prompt length - are what actually determine the cost of a planning turn.
+    Future versions can move more of this context behind smaller retrieval tools, especially for policy documents or large administrative text. The most useful RAG addition would be focused policy search, not replacing the exact prerequisite, schedule, and exam checks already handled by deterministic tools.
   </p>
+  <ul>
+    <li>The data bundle is a snapshot. It will not automatically update when Technion publishes a new catalog unless the offline pipeline is rerun.</li>
+    <li>The system does not register students to courses.</li>
+    <li>The system does not access private Technion accounts.</li>
+    <li>The agent can report a best honest plan when constraints make a perfect plan impossible.</li>
+    <li>A future RAG layer could cover academic policy documents and administrative instructions.</li>
+  </ul>
 
   <h2>Required Endpoints</h2>
   <table>
@@ -173,12 +180,5 @@
     </tbody>
   </table>
 
-  <h2>Current Limits</h2>
-  <ul>
-    <li>The system does not register students to courses.</li>
-    <li>The system does not access private Technion accounts.</li>
-    <li>The data bundle is a snapshot, with a final live offering check before delivery.</li>
-    <li>If a fully clean plan is not found, the agent reports the best honest plan and names the remaining issue.</li>
-  </ul>
 </body>
 </html>
