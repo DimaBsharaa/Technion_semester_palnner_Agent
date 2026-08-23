@@ -427,8 +427,8 @@ def agent_info():
             "The system handles the cases students actually ask about: failed-course retakes, "
             "grade-improvement retake suggestions, unavailable weekdays, light or fast pacing, course "
             "questions, transcript PDF grades, and follow-up changes such as adding, removing, or "
-            "swapping a course. When constraints conflict, it explains the trade-off clearly instead "
-            "of hiding it."
+            "swapping a course. When constraints conflict, it can return the best honest plan and let "
+            "the student accept the trade-off or ask for another revision."
         ),
         "purpose": (
             "Give every Technion student the quality of semester planning an experienced human academic "
