@@ -423,7 +423,7 @@ def agent_info():
             "During planning, APEX works through real course data and planning tools: catalog and "
             "requirement lookup, prerequisite graph checks, section-level schedule analysis, exam "
             "spacing, CheeseFork review summaries, historical grade averages, future-impact analysis, "
-            "risk reporting, live offering checks, and final invariant checks. It supports Data & "
+            "risk reporting, and a live check that selected courses are offered next semester. It supports Data & "
             "Information Engineering, Information Systems Engineering, and Industrial Engineering and "
             "Management.\n\n"
             "APEX can parse an uploaded grade sheet PDF and use those grades when planning. It "
