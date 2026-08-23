@@ -427,7 +427,9 @@ def agent_info():
             "grade-improvement retakes using the student's grades, course averages, and reviews, answer "
             "course questions without running the full planning loop, save and restore planning state, "
             "and revise a previous plan. When constraints conflict, it can return the best honest plan "
-            "and let the student accept the trade-off or ask for another revision (the NEEDS REVIEW case)."
+            "and let the student accept the trade-off or ask for another revision (the NEEDS REVIEW case). "
+            "It never registers the student, accesses a real Technion account, or delivers a plan with a "
+            "schedule collision, a passed course, or an unmet prerequisite."
         ),
         "purpose": (
             "Give every Technion student the quality of semester planning an experienced human academic "
