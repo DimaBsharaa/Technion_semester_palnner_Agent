@@ -414,7 +414,7 @@ def agent_info():
         examples = json.loads(example_path.read_text(encoding="utf-8"))
     return {
         "description": (
-            "APEX plans a Technion student's next semester from natural-language input in Hebrew or "
+            "APEX plans a Technion student's next semester from free-text input in Hebrew or "
             "English. It reads the student's semester, track, passed and failed courses, blocked days, "
             "pace preference, requested courses, and grades. If key information is missing, it asks "
             "for only that detail; otherwise it builds a checked plan with course reasoning, weekly "
@@ -426,10 +426,12 @@ def agent_info():
             "risk reporting, live offering checks, and final invariant checks. It supports Data & "
             "Information Engineering, Information Systems Engineering, and Industrial Engineering and "
             "Management.\n\n"
-            "The system handles the cases students actually ask about: failed-course retakes, "
-            "grade-improvement retake suggestions, unavailable weekdays, light or fast pacing, course "
-            "questions, transcript PDF grades, optional session restore, and follow-up changes such as "
-            "adding, removing, or swapping a course. When constraints conflict, it can return the best "
+            "APEX can parse an uploaded grade sheet PDF and use those grades when planning. It "
+            "prioritizes failed retakes, and for grade-improvement retakes it advises using the "
+            "student's grade history, the course's historical averages, and real student reviews. It "
+            "can answer general course questions directly from review data without running the full "
+            "planning loop, save and restore student planning state, and revise a previous plan by "
+            "adding, removing, or swapping courses. When constraints conflict, it can return the best "
             "honest plan and let the student accept the trade-off or ask for another revision (the "
             "NEEDS REVIEW case)."
         ),
