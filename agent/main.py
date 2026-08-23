@@ -414,22 +414,21 @@ def agent_info():
         examples = json.loads(example_path.read_text(encoding="utf-8"))
     return {
         "description": (
-            "An academic-advisor agent that plans a Technion student's next semester. "
-            "The student describes their situation in free text (Hebrew or English) - semester number, "
-            "courses passed or failed, days they cannot attend, preferred pace - and the agent builds a "
-            "complete, verified semester plan: courses with per-course reasoning, a clash-free weekly "
-            "timetable, an exam calendar (moed A+B), risk analysis, and a roadmap to graduation.\n\n"
-            "What it CAN do: plan a semester for the supported Technion tracks (Data & Information "
-            "Engineering by default; Information Systems Engineering on request); prioritize retakes of "
-            "blocking courses; respect excluded weekdays with section-level precision; balance credits, "
-            "workload and exam spacing; answer course questions grounded in real student reviews; and "
-            "revise an existing plan minimally on follow-up ('swap course X', 'I have a wedding on an "
-            "exam date').\n\n"
-            "What it CANNOT do (constraints): it does not register the student to courses or access any "
-            "personal Technion account (it works from the public catalog only); it never delivers a plan "
-            "containing a schedule collision, an already-passed course, or a course whose prerequisites "
-            "are unmet; it caps sport-course filler at one; and when constraints make a full plan "
-            "impossible it says so honestly instead of hiding the problem."
+            "APEX plans a Technion student's next semester from natural-language input in Hebrew or "
+            "English. It reads the student's semester, track, passed and failed courses, blocked days, "
+            "pace preference, requested courses, and grades, then builds a checked plan with course "
+            "reasoning, weekly timetable, moed A and moed B exam dates, workload notes, risk analysis, "
+            "and a roadmap to graduation.\n\n"
+            "During planning, APEX works through real course data and planning tools: catalog and "
+            "requirement lookup, prerequisite graph checks, section-level schedule analysis, exam "
+            "spacing, CheeseFork review summaries, historical grade averages, future-impact analysis, "
+            "risk reporting, and final invariant checks. It supports Data & Information Engineering, "
+            "Information Systems Engineering, and Industrial Engineering and Management.\n\n"
+            "The system handles the cases students actually ask about: failed-course retakes, "
+            "grade-improvement retake suggestions, unavailable weekdays, light or fast pacing, course "
+            "questions, transcript PDF grades, and follow-up changes such as adding, removing, or "
+            "swapping a course. When constraints conflict, it explains the trade-off clearly instead "
+            "of hiding it."
         ),
         "purpose": (
             "Give every Technion student the quality of semester planning an experienced human academic "
@@ -498,11 +497,13 @@ def execute(request: ExecuteRequest):
         prompt = (request.prompt or "").strip()
         if not prompt:
             return {"status": "error", "error": "Empty prompt.", "response": None, "steps": []}
-        # Optional track switch: mention Information Systems to use that track.
+        # Optional track switch: mention a track by name to use it instead of the default.
         track_id = "SC00001453"
         low = prompt.lower()
         if "information systems" in low or "מערכות מידע" in prompt:
             track_id = "SC00001416"
+        elif "industrial engineering" in low or "תעשיה" in prompt or "תעשייה" in prompt:
+            track_id = "SC00001383"
         result = run_agent_turn_v2(track_id, [{"role": "user", "content": prompt}], 0.0)
         return {
             "status": "ok",
