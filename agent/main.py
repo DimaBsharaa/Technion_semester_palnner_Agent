@@ -416,9 +416,10 @@ def agent_info():
         "description": (
             "APEX plans a Technion student's next semester from natural-language input in Hebrew or "
             "English. It reads the student's semester, track, passed and failed courses, blocked days, "
-            "pace preference, requested courses, and grades, then builds a checked plan with course "
-            "reasoning, weekly timetable, moed A and moed B exam dates, workload notes, risk analysis, "
-            "and a roadmap to graduation.\n\n"
+            "pace preference, requested courses, and grades. If key information is missing, it asks "
+            "for only that detail; otherwise it builds a checked plan with course reasoning, weekly "
+            "timetable, moed A and moed B exam dates, workload notes, risk analysis, and a roadmap to "
+            "graduation.\n\n"
             "During planning, APEX works through real course data and planning tools: catalog and "
             "requirement lookup, prerequisite graph checks, section-level schedule analysis, exam "
             "spacing, CheeseFork review summaries, historical grade averages, future-impact analysis, "
